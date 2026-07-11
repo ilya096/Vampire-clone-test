@@ -1,3 +1,5 @@
+using Assets.Scripts;
+using Assets.Scripts.Ecs;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -10,15 +12,19 @@ public class GameInstaller : MonoBehaviour
     [SerializeField] private InputService _inputService;
     [SerializeField] private PlayerView _player;
     [SerializeField] private CameraFollow _cameraFollow;
+    [SerializeField] private EnemyViewSynchronizator _enemyViewSynchronizator;
+    [SerializeField] private EnemySpawnConfig _enemySpawnConfig;
 
     private World _world;
     private EntityManager _entityManager;
     private Entity _playerEntity;
     private Entity _playerInputEntity;
+    private Entity _enemySpawnerEntity;
 
     private void Awake()
     {
         ServiceLocator.Register(_inputService);
+        ServiceLocator.Register(_enemyViewSynchronizator);
 
         _world = World.DefaultGameObjectInjectionWorld;
         _entityManager = _world.EntityManager;
@@ -26,6 +32,7 @@ public class GameInstaller : MonoBehaviour
         _playerInputEntity = _entityManager.CreateEntity(typeof(PlayerMoveInput));
 
         CreatePlayer();
+        CreateEnemySpawner();
 
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);
@@ -47,7 +54,8 @@ public class GameInstaller : MonoBehaviour
         _playerEntity = _entityManager.CreateEntity(
             typeof(PlayerTag),
             typeof(MoveSpeed),
-            typeof(LocalTransform)
+            typeof(LocalTransform),
+            typeof(HealthComponent)
             );
 
         _entityManager.SetComponentData(_playerEntity, new MoveSpeed()
@@ -56,6 +64,28 @@ public class GameInstaller : MonoBehaviour
         });
 
         _entityManager.SetComponentData(_playerEntity, LocalTransform.FromPosition(initPos));
+        _entityManager.SetComponentData(_playerEntity, new HealthComponent() { Value = 100});
+    }
+
+    private void CreateEnemySpawner()
+    {
+        _enemySpawnerEntity = _entityManager.CreateEntity(
+            typeof(EnemySpawnConfigComponent),
+            typeof(EnemySpawnStateComponent)
+            );
+
+        _entityManager.SetComponentData(_enemySpawnerEntity, new EnemySpawnConfigComponent()
+        {
+            EnemyHealth = _enemySpawnConfig.EnemyHealth,
+            EnemySpeed = _enemySpawnConfig.EnemySpeed,
+            Interval = _enemySpawnConfig.Interval,
+            MaxEnemies = _enemySpawnConfig.MaxEnemies,
+            SpawnRadius = _enemySpawnConfig.SpawnRadius,
+            EnemyAttack = _enemySpawnConfig.EnemyAttack,
+            EnemyAttackInterval = _enemySpawnConfig.EnemyAttackInterval,
+            EnemyRange = _enemySpawnConfig.EnemyRange
+        });
+
     }
 
     private void DestroyEntity(Entity entity)

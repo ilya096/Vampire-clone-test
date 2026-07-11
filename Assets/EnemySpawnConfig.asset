@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 868b7d3ca4adaa54c8fd7bc6f98e172b, type: 3}
+  m_Name: EnemySpawnConfig
+  m_EditorClassIdentifier: Assembly-CSharp::EnemySpawnConfig
+  _interval: 1.25
+  _spawnRadius: 9
+  _enemySpeed: 2.5
+  _enemyHealth: 20
+  _maxEnemies: 20
