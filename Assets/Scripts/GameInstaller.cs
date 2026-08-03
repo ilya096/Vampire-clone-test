@@ -21,6 +21,7 @@ public class GameInstaller : MonoBehaviour
     private Entity _playerInputEntity;
     private Entity _enemySpawnerEntity;
     private CombatRuntimeController _combatRuntimeController;
+    private WaveRuntimeController _waveRuntimeController;
 
     private void Awake()
     {
@@ -42,6 +43,14 @@ public class GameInstaller : MonoBehaviour
         }
 
         _combatRuntimeController.Initialize(_world, _playerEntity, _player.transform);
+
+        _waveRuntimeController = GetComponent<WaveRuntimeController>();
+        if (_waveRuntimeController == null)
+        {
+            _waveRuntimeController = gameObject.AddComponent<WaveRuntimeController>();
+        }
+
+        _waveRuntimeController.Initialize(_world, _playerEntity, _player.transform);
 
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);
