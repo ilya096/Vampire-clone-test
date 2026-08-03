@@ -41,8 +41,11 @@ namespace Assets.Scripts.Ecs
 			}
 
 			float3 playerPosition = GetPlayerPosition(ref state);
-			float3 spawnPosition = GetSpawnPosition(playerPosition, config.SpawnRadius);
-			CreateEnemy(ref state, spawnPosition, config);
+			var random = new Unity.Mathematics.Random(spawnState.ValueRO.RandomState == 0 ? 1u : spawnState.ValueRO.RandomState);
+			float3 spawnPosition = GetSpawnPosition(playerPosition, config.SpawnRadius, ref random);
+			EnemyArchetype archetype = GetArchetype(ref random);
+			spawnState.ValueRW.RandomState = random.state;
+			CreateEnemy(ref state, spawnPosition, archetype);
         }
 
 		private float3 GetPlayerPosition(ref SystemState state)
@@ -53,9 +56,8 @@ namespace Assets.Scripts.Ecs
 			return transform.Position;
 		}
 
-		private float3 GetSpawnPosition(float3 playerPosition, float spawnRadius)
+		private float3 GetSpawnPosition(float3 playerPosition, float spawnRadius, ref Unity.Mathematics.Random random)
 		{
-			var random = new Unity.Mathematics.Random(1u);
 			float angle = random.NextFloat(0f, math.PI * 2f);
 
 			float3 direction = new(math.cos(angle), 0, math.sin(angle));
@@ -63,24 +65,43 @@ namespace Assets.Scripts.Ecs
 			return playerPosition + direction * spawnRadius;
 		}
 
-		private void CreateEnemy(ref SystemState state, float3 positon, EnemySpawnConfigComponent config)
+		private EnemyArchetype GetArchetype(ref Unity.Mathematics.Random random)
 		{
+			float roll = random.NextFloat();
+			if (roll < 0.6f) return EnemyArchetype.Normal;
+			if (roll < 0.8f) return EnemyArchetype.Swarm;
+			if (roll < 0.9f) return EnemyArchetype.Heavy;
+			return EnemyArchetype.Ranged;
+		}
+
+		private void CreateEnemy(ref SystemState state, float3 positon, EnemyArchetype archetype)
+		{
+			EnemyBalance balance = CombatBalance.GetEnemy(archetype);
 			Entity enemy = state.EntityManager.CreateEntity(
 				typeof(EnemyTag),
+				typeof(EnemyArchetypeComponent),
+				typeof(EnemyBehaviourComponent),
 				typeof(MoveSpeed),
 				typeof(LocalTransform),
 				typeof(HealthComponent),
 				typeof(AttackComponent)
 				);
 
-			state.EntityManager.SetComponentData<MoveSpeed>(enemy, new MoveSpeed() {Value = config.EnemySpeed });
+			state.EntityManager.SetComponentData<EnemyArchetypeComponent>(enemy, new EnemyArchetypeComponent { Value = archetype });
+			state.EntityManager.SetComponentData<EnemyBehaviourComponent>(enemy, new EnemyBehaviourComponent
+			{
+				BaseSpeed = balance.Speed,
+				PreferredDistance = archetype == EnemyArchetype.Ranged ? 6f : 0f,
+				DashCooldown = archetype == EnemyArchetype.Heavy ? 3f : 0f
+			});
+			state.EntityManager.SetComponentData<MoveSpeed>(enemy, new MoveSpeed() {Value = balance.Speed });
 			state.EntityManager.SetComponentData<LocalTransform>(enemy, LocalTransform.FromPosition(positon));
-			state.EntityManager.SetComponentData<HealthComponent>(enemy, new HealthComponent() { Value = 100 });
+			state.EntityManager.SetComponentData<HealthComponent>(enemy, new HealthComponent() { Value = balance.Health, MaxValue = balance.Health });
 			state.EntityManager.SetComponentData<AttackComponent>(enemy, new AttackComponent()
 			{
-				Damage = config.EnemyAttack,
-				Inverval = config.EnemyAttackInterval,
-				Range = config.EnemyRange,
+				Damage = balance.Damage,
+				Inverval = balance.AttackInterval,
+				Range = balance.AttackRange,
 			});
 		}
 	}

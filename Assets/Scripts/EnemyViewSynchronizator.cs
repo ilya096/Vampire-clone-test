@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using Assets.Scripts.Ecs;
 using Unity.Entities;
 using UnityEngine;
 using UnityEngine.AI;
@@ -55,7 +56,29 @@ namespace Assets.Scripts
             agent.Warp(position);
         }
 
-        private void ReturnToPool(Entity enemy)
+        public void ConfigureEnemyView(Entity enemy, EnemyArchetype archetype)
+        {
+            if (_views.TryGetValue(enemy, out GameObject view) == false)
+            {
+                return;
+            }
+
+            var (color, scale) = archetype switch
+            {
+                EnemyArchetype.Swarm => (new Color(1f, 0.8f, 0.15f), 0.7f),
+                EnemyArchetype.Heavy => (new Color(0.85f, 0.2f, 0.2f), 1.4f),
+                EnemyArchetype.Ranged => (new Color(0.2f, 0.8f, 1f), 0.9f),
+                _ => (new Color(0.8f, 0.8f, 0.8f), 1f)
+            };
+
+            view.transform.localScale = Vector3.one * scale;
+            foreach (var renderer in view.GetComponentsInChildren<Renderer>())
+            {
+                renderer.material.color = color;
+            }
+        }
+
+        public void ReturnToPool(Entity enemy)
         {
             if(_views.Remove(enemy, out GameObject view))
             {
