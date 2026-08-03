@@ -53,7 +53,10 @@ namespace Assets.Scripts
             view.transform.rotation = Quaternion.identity;
 
             var agent = view.GetComponent<NavMeshAgent>();
-            TryPlaceOnNavMesh(agent, position);
+            if (NavMesh.SamplePosition(position, out NavMeshHit hit, _navMeshSampleDistance, NavMesh.AllAreas))
+            {
+                agent.Warp(hit.position);
+            }
         }
 
         public bool TryPlaceOnNavMesh(NavMeshAgent agent, Vector3 position)

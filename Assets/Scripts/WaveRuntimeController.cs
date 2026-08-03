@@ -48,6 +48,7 @@ public class WaveRuntimeController : MonoBehaviour
     private EntityQuery _spawnConfigQuery;
     private EntityQuery _spawnStateQuery;
     private Transform _playerVisual;
+    private EscortRoute _escortRoute;
     private GameObject _cart;
     private GameObject _gate;
     private Vector3 _cartStart;
@@ -65,9 +66,9 @@ public class WaveRuntimeController : MonoBehaviour
     public float EscortPlayerRadius { get => _escortPlayerRadius; set => _escortPlayerRadius = Mathf.Max(0.5f, value); }
     public float EscortRollbackSpeed { get => _escortRollbackSpeed; set => _escortRollbackSpeed = Mathf.Max(0.1f, value); }
     public float PhaseRemainingSeconds => Mathf.Max(0f, _phaseRemaining);
-    public float EscortProgress => _cart == null || _escortDistance <= 0f
+    public float EscortProgress => _cart == null || Vector3.Distance(_cartStart, _cartEnd) <= 0f
         ? 0f
-        : Mathf.Clamp01(Vector3.Distance(_cartStart, _cart.transform.position) / _escortDistance);
+        : Mathf.Clamp01(Vector3.Distance(_cartStart, _cart.transform.position) / Vector3.Distance(_cartStart, _cartEnd));
 
     public void Initialize(World world, Entity playerEntity, Transform playerVisual)
     {
@@ -75,6 +76,7 @@ public class WaveRuntimeController : MonoBehaviour
         _entityManager = world.EntityManager;
         _playerEntity = playerEntity;
         _playerVisual = playerVisual;
+        _escortRoute = FindAnyObjectByType<EscortRoute>();
         _spawnConfigQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnConfigComponent>());
         _spawnStateQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnStateComponent>());
         _initialized = true;
@@ -189,8 +191,10 @@ public class WaveRuntimeController : MonoBehaviour
         }
 
         Vector3 playerPosition = _playerVisual != null ? _playerVisual.position : Vector3.zero;
-        _cartStart = SampleGround(playerPosition);
-        _cartEnd = SampleGround(_cartStart + Vector3.forward * _escortDistance);
+        Vector3 routeStart = _escortRoute != null && _escortRoute.IsConfigured ? _escortRoute.StartPosition : playerPosition;
+        Vector3 routeEnd = _escortRoute != null && _escortRoute.IsConfigured ? _escortRoute.EndPosition : routeStart + Vector3.forward * _escortDistance;
+        _cartStart = SampleGround(routeStart);
+        _cartEnd = SampleGround(routeEnd);
 
         _cart = GameObject.CreatePrimitive(PrimitiveType.Cube);
         _cart.name = "EscortCart_FirstLetterP";
