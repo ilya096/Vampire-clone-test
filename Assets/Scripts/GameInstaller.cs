@@ -24,6 +24,7 @@ public class GameInstaller : MonoBehaviour
     private CombatRuntimeController _combatRuntimeController;
     private WaveRuntimeController _waveRuntimeController;
     private PlayerProgressionController _playerProgressionController;
+    private DebugAdminPanel _debugAdminPanel;
 
     private void Awake()
     {
@@ -61,6 +62,13 @@ public class GameInstaller : MonoBehaviour
             _playerProgressionController = gameObject.AddComponent<PlayerProgressionController>();
         }
         _playerProgressionController.Initialize(_world, _playerEntity);
+
+        _debugAdminPanel = GetComponent<DebugAdminPanel>();
+        if (_debugAdminPanel == null)
+        {
+            _debugAdminPanel = gameObject.AddComponent<DebugAdminPanel>();
+        }
+        _debugAdminPanel.Initialize(_world, _playerEntity);
 
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);

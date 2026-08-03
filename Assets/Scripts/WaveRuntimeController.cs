@@ -56,6 +56,14 @@ public class WaveRuntimeController : MonoBehaviour
     private bool _initialized;
 
     public FirstArenaPhase Phase { get; private set; }
+    public float FirstWaveSeconds { get => _firstWaveSeconds; set => _firstWaveSeconds = Mathf.Max(1f, value); }
+    public float SecondWaveSeconds { get => _secondWaveSeconds; set => _secondWaveSeconds = Mathf.Max(1f, value); }
+    public float FirstWaveSpawnInterval { get => _firstWaveSpawnInterval; set => _firstWaveSpawnInterval = Mathf.Max(0.05f, value); }
+    public float SecondWaveSpawnInterval { get => _secondWaveSpawnInterval; set => _secondWaveSpawnInterval = Mathf.Max(0.05f, value); }
+    public float EscortSpawnInterval { get => _escortSpawnInterval; set => _escortSpawnInterval = Mathf.Max(0.05f, value); }
+    public float EscortSpeed { get => _escortSpeed; set => _escortSpeed = Mathf.Max(0.1f, value); }
+    public float EscortPlayerRadius { get => _escortPlayerRadius; set => _escortPlayerRadius = Mathf.Max(0.5f, value); }
+    public float EscortRollbackSpeed { get => _escortRollbackSpeed; set => _escortRollbackSpeed = Mathf.Max(0.1f, value); }
     public float PhaseRemainingSeconds => Mathf.Max(0f, _phaseRemaining);
     public float EscortProgress => _cart == null || _escortDistance <= 0f
         ? 0f
