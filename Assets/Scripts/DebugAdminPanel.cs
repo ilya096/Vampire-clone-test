@@ -2,6 +2,7 @@ using Assets.Scripts.Ecs;
 using Unity.Entities;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.Collections.Generic;
 
 /// <summary>
 /// Local-only tuning surface. It is hidden until Shift+Num0 is pressed inside pause.
@@ -21,6 +22,7 @@ public class DebugAdminPanel : MonoBehaviour
     private float _initialSecondWave;
     private float _initialEscortSpeed;
     private float _initialEscortRadius;
+    private readonly Dictionary<string, string> _valueInputs = new();
 
     public void Initialize(World world, Entity player)
     {
@@ -80,13 +82,13 @@ public class DebugAdminPanel : MonoBehaviour
         tuning.MachineGunDamage = Mathf.RoundToInt(DrawValue(panel.x, y, "MG damage", tuning.MachineGunDamage, 1f, 100f)); y += 25f;
         tuning.PlayerBaseSpeed = DrawValue(panel.x, y, "Move speed", tuning.PlayerBaseSpeed, 1f, 15f); y += 25f;
         health.Value = Mathf.RoundToInt(DrawValue(panel.x, y, "Current HP", health.Value, 1f, health.MaxValue)); y += 28f;
-        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс игрока/оружия")) ResetPlayerAndWeapons(); y += 32f;
+        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс игрока/оружия")) { ResetPlayerAndWeapons(); return; } y += 32f;
 
         GUI.Label(new Rect(panel.x + 12f, y, 350f, 20f), "Прогрессия"); y += 22f;
         tuning.ExperienceRadius = DrawValue(panel.x, y, "XP radius", tuning.ExperienceRadius, 0.5f, 12f); y += 25f;
         progression.ExperienceValueMultiplier = DrawValue(panel.x, y, "XP value", progression.ExperienceValueMultiplier, 0.5f, 5f); y += 25f;
         progression.NextLevelExperience = Mathf.RoundToInt(DrawValue(panel.x, y, "Next XP", progression.NextLevelExperience, 1f, 500f)); y += 28f;
-        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс прогрессии")) ResetProgression(); y += 32f;
+        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс прогрессии")) { ResetProgression(); return; } y += 32f;
 
         GUI.Label(new Rect(panel.x + 12f, y, 350f, 20f), "Волны и вагонетка"); y += 22f;
         if (_waves != null)
@@ -95,7 +97,7 @@ public class DebugAdminPanel : MonoBehaviour
             _waves.SecondWaveSeconds = DrawValue(panel.x, y, "Wave 2 sec", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
             _waves.EscortSpeed = DrawValue(panel.x, y, "Cart speed", _waves.EscortSpeed, 0.1f, 8f); y += 25f;
             _waves.EscortPlayerRadius = DrawValue(panel.x, y, "Cart radius", _waves.EscortPlayerRadius, 0.5f, 10f); y += 28f;
-            if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс волн/вагонетки")) ResetWaves();
+            if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс волн/вагонетки")) { ResetWaves(); return; }
         }
 
         SetTuning(tuning);
@@ -107,7 +109,13 @@ public class DebugAdminPanel : MonoBehaviour
     {
         GUI.Label(new Rect(x + 12f, y, 120f, 20f), label);
         float slider = GUI.HorizontalSlider(new Rect(x + 135f, y + 5f, 150f, 20f), value, min, max);
-        string input = GUI.TextField(new Rect(x + 292f, y, 80f, 20f), slider.ToString("0.##"));
+        if (_valueInputs.TryGetValue(label, out string stored) == false || Mathf.Abs(slider - value) > 0.0001f)
+        {
+            stored = slider.ToString("0.##");
+        }
+
+        string input = GUI.TextField(new Rect(x + 292f, y, 80f, 20f), stored);
+        _valueInputs[label] = input;
         return float.TryParse(input, out float exact) ? Mathf.Clamp(exact, min, max) : slider;
     }
 
