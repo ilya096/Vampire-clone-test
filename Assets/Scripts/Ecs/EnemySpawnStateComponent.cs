@@ -7,5 +7,6 @@ namespace Assets.Scripts.Ecs
 	public struct EnemySpawnStateComponent: IComponentData
 	{
 		public float TimeToNextSpawn;
+		public uint RandomState;
 	}
 }

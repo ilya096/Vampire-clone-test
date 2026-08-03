@@ -7,6 +7,8 @@ namespace Assets.Scripts.Ecs
 {
     public struct DamageRequest : IComponentData
     {
+        public Entity Target;
         public int Amount;
+        public DamageSource Source;
     }
 }

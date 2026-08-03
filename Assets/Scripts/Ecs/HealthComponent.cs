@@ -8,5 +8,6 @@ namespace Assets.Scripts.Ecs
     public struct HealthComponent : IComponentData
     {
         public int Value;
+        public int MaxValue;
     }
 }

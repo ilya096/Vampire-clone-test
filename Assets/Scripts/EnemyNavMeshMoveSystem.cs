@@ -13,7 +13,7 @@ namespace Assets.Scripts
     {
         private EnemyViewSynchronizator _enemyViewSynchronizator;
 
-        protected void onCreate()
+        protected override void OnCreate()
         {
             RequireForUpdate<PlayerTag>();
         }
@@ -25,13 +25,56 @@ namespace Assets.Scripts
             var playerPosition = GetPlayerPosition();
             EntityManager entityManager = EntityManager;
 
-            foreach((RefRW<LocalTransform> transform, RefRO<MoveSpeed> moveSpeed, Entity enemy) in  
-                SystemAPI.Query<RefRW<LocalTransform>, RefRO<MoveSpeed>>().WithAll<EnemyTag>().WithEntityAccess())
+            float deltaTime = SystemAPI.Time.DeltaTime;
+
+            foreach((RefRW<LocalTransform> transform, RefRW<EnemyBehaviourComponent> behaviour, RefRO<EnemyArchetypeComponent> archetype, Entity enemy) in
+                SystemAPI.Query<RefRW<LocalTransform>, RefRW<EnemyBehaviourComponent>, RefRO<EnemyArchetypeComponent>>().WithAll<EnemyTag>().WithEntityAccess())
             {
                 var agent = _enemyViewSynchronizator.CreateEnemyView(enemy, transform.ValueRO.Position);
+                _enemyViewSynchronizator.ConfigureEnemyView(enemy, archetype.ValueRO.Value);
 
-                agent.speed = moveSpeed.ValueRO.Value;
-                agent.SetDestination(playerPosition);
+                float3 toPlayer = playerPosition - transform.ValueRO.Position;
+                float distance = math.length(toPlayer);
+                float speed = behaviour.ValueRO.BaseSpeed;
+                float3 destination = playerPosition;
+
+                if (archetype.ValueRO.Value == EnemyArchetype.Swarm && distance < 4f)
+                {
+                    speed *= 1.5f;
+                }
+
+                if (archetype.ValueRO.Value == EnemyArchetype.Heavy)
+                {
+                    behaviour.ValueRW.DashCooldown -= deltaTime;
+                    behaviour.ValueRW.DashRemaining -= deltaTime;
+                    if (behaviour.ValueRO.DashCooldown <= 0f && distance > 2f)
+                    {
+                        behaviour.ValueRW.DashRemaining = 0.45f;
+                        behaviour.ValueRW.DashCooldown = 3f;
+                    }
+
+                    if (behaviour.ValueRO.DashRemaining > 0f)
+                    {
+                        speed *= 2.5f;
+                    }
+                }
+
+                if (archetype.ValueRO.Value == EnemyArchetype.Ranged)
+                {
+                    if (distance < behaviour.ValueRO.PreferredDistance && distance > 0.01f)
+                    {
+                        destination = transform.ValueRO.Position - math.normalize(toPlayer) * 2f;
+                    }
+                    else if (distance <= behaviour.ValueRO.PreferredDistance + 0.5f)
+                    {
+                        agent.ResetPath();
+                        transform.ValueRW.Position = new float3(agent.transform.position.x, 0f, agent.transform.position.z);
+                        continue;
+                    }
+                }
+
+                agent.speed = speed;
+                agent.SetDestination(destination);
 
                 transform.ValueRW.Position = new float3(agent.transform.position.x, 0f, agent.transform.position.z);
             }

@@ -1,6 +1,7 @@
 ﻿
 using Unity.Entities;
-using UnityEngine;
+using Unity.Collections;
+using Unity.Mathematics;
 
 namespace Assets.Scripts.Ecs
 {
@@ -16,13 +17,30 @@ namespace Assets.Scripts.Ecs
 
         public void OnUpdate(ref SystemState state)
         {
-            foreach((RefRO<DamageRequest> damage, RefRW<HealthComponent> health) in 
-                SystemAPI.Query<RefRO<DamageRequest>, RefRW<HealthComponent>>())
-            {
-                health.ValueRW.Value -= damage.ValueRO.Amount;
+            EntityCommandBuffer commandBuffer = new(Allocator.Temp);
 
-                Debug.Log($"{health.ValueRO.Value}");
+            foreach((RefRO<DamageRequest> damage, Entity request) in
+                SystemAPI.Query<RefRO<DamageRequest>>().WithEntityAccess())
+            {
+                Entity target = damage.ValueRO.Target;
+
+                if (state.EntityManager.Exists(target) && SystemAPI.HasComponent<HealthComponent>(target))
+                {
+                    RefRW<HealthComponent> health = SystemAPI.GetComponentRW<HealthComponent>(target);
+                    health.ValueRW.Value = math.max(0, health.ValueRO.Value - damage.ValueRO.Amount);
+
+                    if (SystemAPI.HasComponent<PlayerTag>(target) && damage.ValueRO.Source != DamageSource.None)
+                    {
+                        RefRW<PlayerDefeatInfo> defeatInfo = SystemAPI.GetComponentRW<PlayerDefeatInfo>(target);
+                        defeatInfo.ValueRW.LastDamageSource = damage.ValueRO.Source;
+                    }
+                }
+
+                commandBuffer.DestroyEntity(request);
             }
+
+            commandBuffer.Playback(state.EntityManager);
+            commandBuffer.Dispose();
         }
     }
 }

@@ -20,6 +20,7 @@ public class GameInstaller : MonoBehaviour
     private Entity _playerEntity;
     private Entity _playerInputEntity;
     private Entity _enemySpawnerEntity;
+    private CombatRuntimeController _combatRuntimeController;
 
     private void Awake()
     {
@@ -34,6 +35,14 @@ public class GameInstaller : MonoBehaviour
         CreatePlayer();
         CreateEnemySpawner();
 
+        _combatRuntimeController = GetComponent<CombatRuntimeController>();
+        if (_combatRuntimeController == null)
+        {
+            _combatRuntimeController = gameObject.AddComponent<CombatRuntimeController>();
+        }
+
+        _combatRuntimeController.Initialize(_world, _playerEntity, _player.transform);
+
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);
     }
@@ -44,6 +53,14 @@ public class GameInstaller : MonoBehaviour
 
         DestroyEntity(_playerEntity);
         DestroyEntity(_playerInputEntity);
+        DestroyEntity(_enemySpawnerEntity);
+
+        DestroyEntitiesWith<EnemyTag>();
+        DestroyEntitiesWith<ProjectileComponent>();
+        DestroyEntitiesWith<RangedProjectileComponent>();
+        DestroyEntitiesWith<ExperiencePickupComponent>();
+        DestroyEntitiesWith<DamageRequest>();
+        DestroyEntitiesWith<TracerEvent>();
     }
 
     private void CreatePlayer()
@@ -55,7 +72,10 @@ public class GameInstaller : MonoBehaviour
             typeof(PlayerTag),
             typeof(MoveSpeed),
             typeof(LocalTransform),
-            typeof(HealthComponent)
+            typeof(HealthComponent),
+            typeof(PlayerCombatState),
+            typeof(PlayerAimComponent),
+            typeof(PlayerDefeatInfo)
             );
 
         _entityManager.SetComponentData(_playerEntity, new MoveSpeed()
@@ -64,7 +84,10 @@ public class GameInstaller : MonoBehaviour
         });
 
         _entityManager.SetComponentData(_playerEntity, LocalTransform.FromPosition(initPos));
-        _entityManager.SetComponentData(_playerEntity, new HealthComponent() { Value = 100});
+        _entityManager.SetComponentData(_playerEntity, new HealthComponent() { Value = CombatBalance.PlayerMaxHealth, MaxValue = CombatBalance.PlayerMaxHealth});
+        _entityManager.SetComponentData(_playerEntity, new PlayerCombatState { SelectedWeapon = WeaponSlot.Pistol });
+        _entityManager.SetComponentData(_playerEntity, new PlayerAimComponent { Direction = new float3(0f, 0f, 1f) });
+        _entityManager.SetComponentData(_playerEntity, new PlayerDefeatInfo { LastDamageSource = DamageSource.None });
     }
 
     private void CreateEnemySpawner()
@@ -85,6 +108,7 @@ public class GameInstaller : MonoBehaviour
             EnemyAttackInterval = _enemySpawnConfig.EnemyAttackInterval,
             EnemyRange = _enemySpawnConfig.EnemyRange
         });
+        _entityManager.SetComponentData(_enemySpawnerEntity, new EnemySpawnStateComponent { RandomState = 0x51A5EEDu });
 
     }
 
@@ -99,5 +123,16 @@ public class GameInstaller : MonoBehaviour
         {
             _entityManager.DestroyEntity(entity);
         }
+    }
+
+    private void DestroyEntitiesWith<TComponent>() where TComponent : unmanaged, IComponentData
+    {
+        if (_world == null || _world.IsCreated == false)
+        {
+            return;
+        }
+
+        EntityQuery query = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<TComponent>());
+        _entityManager.DestroyEntity(query);
     }
 }
