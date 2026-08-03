@@ -24,8 +24,8 @@ namespace Assets.Scripts
                 return view.GetComponent<NavMeshAgent>();
             }
 
-            var viewPostion = new Vector3(position.x, position.y + _verticalOffset, position.z);
-            view = GetEnemyView(position);
+            Vector3 viewPosition = new(position.x, position.y + _verticalOffset, position.z);
+            view = GetEnemyView(viewPosition);
 
             _views.Add(enemy, view);
 
@@ -53,7 +53,22 @@ namespace Assets.Scripts
             view.transform.rotation = Quaternion.identity;
 
             var agent = view.GetComponent<NavMeshAgent>();
-            agent.Warp(position);
+            TryPlaceOnNavMesh(agent, position);
+        }
+
+        public bool TryPlaceOnNavMesh(NavMeshAgent agent, Vector3 position)
+        {
+            if (agent.isOnNavMesh)
+            {
+                return true;
+            }
+
+            if (NavMesh.SamplePosition(position, out NavMeshHit hit, _navMeshSampleDistance, NavMesh.AllAreas) == false)
+            {
+                return false;
+            }
+
+            return agent.Warp(hit.position);
         }
 
         public void ConfigureEnemyView(Entity enemy, EnemyArchetype archetype)
@@ -83,7 +98,10 @@ namespace Assets.Scripts
             if(_views.Remove(enemy, out GameObject view))
             {
                 var agent = view.GetComponent<NavMeshAgent>();
-                agent.ResetPath();
+                if (agent.isOnNavMesh)
+                {
+                    agent.ResetPath();
+                }
 
                 view.SetActive(false);
                 _pool.Push(view);

@@ -32,6 +32,10 @@ namespace Assets.Scripts
             {
                 var agent = _enemyViewSynchronizator.CreateEnemyView(enemy, transform.ValueRO.Position);
                 _enemyViewSynchronizator.ConfigureEnemyView(enemy, archetype.ValueRO.Value);
+                if (agent.isOnNavMesh == false && _enemyViewSynchronizator.TryPlaceOnNavMesh(agent, transform.ValueRO.Position) == false)
+                {
+                    continue;
+                }
 
                 float3 toPlayer = playerPosition - transform.ValueRO.Position;
                 float distance = math.length(toPlayer);
