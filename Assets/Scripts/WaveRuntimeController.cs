@@ -4,6 +4,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.AI;
+using System.Collections.Generic;
 
 /// <summary>
 /// Runs the validated first-arena vertical slice: preparation, two fixed waves,
@@ -53,6 +54,9 @@ public class WaveRuntimeController : MonoBehaviour
     private GameObject _gate;
     private Vector3 _cartStart;
     private Vector3 _cartEnd;
+    private readonly List<Vector3> _escortPoints = new();
+    private float _escortPathLength;
+    private float _escortDistanceTravelled;
     private float _phaseRemaining;
     private bool _initialized;
 
@@ -66,9 +70,9 @@ public class WaveRuntimeController : MonoBehaviour
     public float EscortPlayerRadius { get => _escortPlayerRadius; set => _escortPlayerRadius = Mathf.Max(0.5f, value); }
     public float EscortRollbackSpeed { get => _escortRollbackSpeed; set => _escortRollbackSpeed = Mathf.Max(0.1f, value); }
     public float PhaseRemainingSeconds => Mathf.Max(0f, _phaseRemaining);
-    public float EscortProgress => _cart == null || Vector3.Distance(_cartStart, _cartEnd) <= 0f
+    public float EscortProgress => _cart == null || _escortPathLength <= 0f
         ? 0f
-        : Mathf.Clamp01(Vector3.Distance(_cartStart, _cart.transform.position) / Vector3.Distance(_cartStart, _cartEnd));
+        : Mathf.Clamp01(_escortDistanceTravelled / _escortPathLength);
 
     public void Initialize(World world, Entity playerEntity, Transform playerVisual)
     {
@@ -191,10 +195,22 @@ public class WaveRuntimeController : MonoBehaviour
         }
 
         Vector3 playerPosition = _playerVisual != null ? _playerVisual.position : Vector3.zero;
-        Vector3 routeStart = _escortRoute != null && _escortRoute.IsConfigured ? _escortRoute.StartPosition : playerPosition;
-        Vector3 routeEnd = _escortRoute != null && _escortRoute.IsConfigured ? _escortRoute.EndPosition : routeStart + Vector3.forward * _escortDistance;
-        _cartStart = SampleGround(routeStart);
-        _cartEnd = SampleGround(routeEnd);
+        if (_escortRoute != null && _escortRoute.IsConfigured)
+        {
+            _escortRoute.AppendWorldPoints(_escortPoints);
+        }
+        else
+        {
+            _escortPoints.Clear();
+            _escortPoints.Add(playerPosition);
+            _escortPoints.Add(playerPosition + Vector3.forward * _escortDistance);
+        }
+
+        for (int index = 0; index < _escortPoints.Count; index++) _escortPoints[index] = SampleGround(_escortPoints[index]);
+        _cartStart = _escortPoints[0];
+        _cartEnd = _escortPoints[_escortPoints.Count - 1];
+        _escortPathLength = GetEscortPathLength();
+        _escortDistanceTravelled = 0f;
 
         _cart = GameObject.CreatePrimitive(PrimitiveType.Cube);
         _cart.name = "EscortCart_FirstLetterP";
@@ -220,15 +236,39 @@ public class WaveRuntimeController : MonoBehaviour
 
         Vector3 playerPosition = _playerVisual != null ? _playerVisual.position : Vector3.zero;
         float distanceToCart = Vector3.Distance(playerPosition, _cart.transform.position);
-        Vector3 target = distanceToCart <= _escortPlayerRadius ? _cartEnd : _cartStart;
-        float speed = target == _cartEnd ? _escortSpeed : _escortRollbackSpeed;
-        Vector3 nextPosition = Vector3.MoveTowards(_cart.transform.position, target + Vector3.up * 0.35f, speed * Time.deltaTime);
-        _cart.transform.position = nextPosition;
+        float deltaDistance = (distanceToCart <= _escortPlayerRadius ? _escortSpeed : -_escortRollbackSpeed) * Time.deltaTime;
+        _escortDistanceTravelled = Mathf.Clamp(_escortDistanceTravelled + deltaDistance, 0f, _escortPathLength);
+        Vector3 nextPosition = EvaluateEscortPath(_escortDistanceTravelled);
+        _cart.transform.position = nextPosition + Vector3.up * 0.35f;
 
-        if (Vector3.Distance(nextPosition, _cartEnd + Vector3.up * 0.35f) <= 0.01f)
+        if (_escortDistanceTravelled >= _escortPathLength)
         {
             EnterPhase(FirstArenaPhase.Complete);
         }
+    }
+
+    private float GetEscortPathLength()
+    {
+        float length = 0f;
+        for (int index = 1; index < _escortPoints.Count; index++) length += Vector3.Distance(_escortPoints[index - 1], _escortPoints[index]);
+        return length;
+    }
+
+    private Vector3 EvaluateEscortPath(float distance)
+    {
+        float remaining = distance;
+        for (int index = 1; index < _escortPoints.Count; index++)
+        {
+            Vector3 from = _escortPoints[index - 1];
+            Vector3 to = _escortPoints[index];
+            float segmentLength = Vector3.Distance(from, to);
+            if (remaining <= segmentLength || index == _escortPoints.Count - 1)
+            {
+                return Vector3.Lerp(from, to, segmentLength <= 0f ? 1f : remaining / segmentLength);
+            }
+            remaining -= segmentLength;
+        }
+        return _cartEnd;
     }
 
     private static Vector3 SampleGround(Vector3 position)
