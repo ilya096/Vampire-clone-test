@@ -100,7 +100,8 @@ namespace Assets.Scripts.Ecs
 
                 float progress = segmentLengthSquared <= 0.0001f ? 0f : math.saturate(math.dot(transform.ValueRO.Position - start, segment) / segmentLengthSquared);
                 float3 closestPoint = start + segment * progress;
-                if (math.distancesq(transform.ValueRO.Position, closestPoint) <= 0.55f * 0.55f && progress < closestProgress)
+                float2 planarOffset = new(transform.ValueRO.Position.x - closestPoint.x, transform.ValueRO.Position.z - closestPoint.z);
+                if (math.lengthsq(planarOffset) <= 0.85f * 0.85f && progress < closestProgress)
                 {
                     closestEnemy = enemy;
                     closestProgress = progress;
