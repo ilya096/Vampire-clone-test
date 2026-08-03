@@ -26,6 +26,24 @@ namespace Assets.Scripts.Ecs
 
                 if (state.EntityManager.Exists(target) && SystemAPI.HasComponent<HealthComponent>(target))
                 {
+                    if (SystemAPI.HasComponent<PlayerTag>(target) && SystemAPI.HasComponent<PlayerProgressionState>(target))
+                    {
+                        RefRW<PlayerProgressionState> progression = SystemAPI.GetComponentRW<PlayerProgressionState>(target);
+                        if (progression.ValueRO.InvulnerabilityRemaining > 0f)
+                        {
+                            commandBuffer.DestroyEntity(request);
+                            continue;
+                        }
+
+                        if (progression.ValueRO.DashUnlocked && progression.ValueRO.DashCooldownRemaining <= 0f)
+                        {
+                            GameplayTuningComponent tuning = SystemAPI.GetSingleton<GameplayTuningComponent>();
+                            progression.ValueRW.DashCooldownRemaining = tuning.DashCooldownSeconds;
+                            progression.ValueRW.DashRemaining = tuning.DashDurationSeconds;
+                            progression.ValueRW.InvulnerabilityRemaining = tuning.DashInvulnerabilitySeconds;
+                        }
+                    }
+
                     RefRW<HealthComponent> health = SystemAPI.GetComponentRW<HealthComponent>(target);
                     health.ValueRW.Value = math.max(0, health.ValueRO.Value - damage.ValueRO.Amount);
 

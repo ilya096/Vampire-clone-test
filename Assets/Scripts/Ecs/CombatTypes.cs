@@ -35,6 +35,7 @@ namespace Assets.Scripts.Ecs
         public float PreferredDistance;
         public float DashCooldown;
         public float DashRemaining;
+        public float SlowRemaining;
     }
 
     public struct PlayerCombatState : IComponentData
@@ -43,6 +44,42 @@ namespace Assets.Scripts.Ecs
         public float PistolCooldown;
         public float MachineGunCooldown;
         public int Experience;
+    }
+
+    public struct PlayerProgressionState : IComponentData
+    {
+        public int Level;
+        public int NextLevelExperience;
+        public int PistolUpgradeCount;
+        public int MachineGunUpgradeCount;
+        public float MoveSpeedMultiplier;
+        public float ExperienceRadiusMultiplier;
+        public float ExperienceValueMultiplier;
+        public float HealthRegenerationPerSecond;
+        public float HealthRegenerationAccumulator;
+        public bool DashUnlocked;
+        public float DashCooldownRemaining;
+        public float DashRemaining;
+        public float InvulnerabilityRemaining;
+        public bool PistolExplosion;
+        public bool PistolRicochet;
+        public bool MachineGunSlow;
+        public bool MachineGunChainLightning;
+    }
+
+    public struct GameplayTuningComponent : IComponentData
+    {
+        public int PistolDamage;
+        public float PistolIntervalSeconds;
+        public int MachineGunDamage;
+        public float MachineGunIntervalSeconds;
+        public float PlayerBaseSpeed;
+        public float ExperienceRadius;
+        public float ExperienceValueMultiplier;
+        public float DashCooldownSeconds;
+        public float DashDurationSeconds;
+        public float DashSpeedMultiplier;
+        public float DashInvulnerabilitySeconds;
     }
 
     public struct PlayerAimComponent : IComponentData
@@ -59,6 +96,10 @@ namespace Assets.Scripts.Ecs
         public int Damage;
         public int PierceRemaining;
         public bool DoubleDamageAgainstHeavy;
+        public float ExplosionRadius;
+        public int RicochetRemaining;
+        public float SlowSeconds;
+        public int ChainLightningRemaining;
         public float4 Color;
         public float VisualScale;
     }

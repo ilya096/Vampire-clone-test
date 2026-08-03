@@ -20,7 +20,10 @@ public class GameInstaller : MonoBehaviour
     private Entity _playerEntity;
     private Entity _playerInputEntity;
     private Entity _enemySpawnerEntity;
+    private Entity _gameplayTuningEntity;
     private CombatRuntimeController _combatRuntimeController;
+    private WaveRuntimeController _waveRuntimeController;
+    private PlayerProgressionController _playerProgressionController;
 
     private void Awake()
     {
@@ -33,6 +36,7 @@ public class GameInstaller : MonoBehaviour
         _playerInputEntity = _entityManager.CreateEntity(typeof(PlayerMoveInput));
 
         CreatePlayer();
+        CreateGameplayTuning();
         CreateEnemySpawner();
 
         _combatRuntimeController = GetComponent<CombatRuntimeController>();
@@ -42,6 +46,21 @@ public class GameInstaller : MonoBehaviour
         }
 
         _combatRuntimeController.Initialize(_world, _playerEntity, _player.transform);
+
+        _waveRuntimeController = GetComponent<WaveRuntimeController>();
+        if (_waveRuntimeController == null)
+        {
+            _waveRuntimeController = gameObject.AddComponent<WaveRuntimeController>();
+        }
+
+        _waveRuntimeController.Initialize(_world, _playerEntity, _player.transform);
+
+        _playerProgressionController = GetComponent<PlayerProgressionController>();
+        if (_playerProgressionController == null)
+        {
+            _playerProgressionController = gameObject.AddComponent<PlayerProgressionController>();
+        }
+        _playerProgressionController.Initialize(_world, _playerEntity);
 
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);
@@ -54,6 +73,7 @@ public class GameInstaller : MonoBehaviour
         DestroyEntity(_playerEntity);
         DestroyEntity(_playerInputEntity);
         DestroyEntity(_enemySpawnerEntity);
+        DestroyEntity(_gameplayTuningEntity);
 
         DestroyEntitiesWith<EnemyTag>();
         DestroyEntitiesWith<ProjectileComponent>();
@@ -74,6 +94,7 @@ public class GameInstaller : MonoBehaviour
             typeof(LocalTransform),
             typeof(HealthComponent),
             typeof(PlayerCombatState),
+            typeof(PlayerProgressionState),
             typeof(PlayerAimComponent),
             typeof(PlayerDefeatInfo)
             );
@@ -86,8 +107,35 @@ public class GameInstaller : MonoBehaviour
         _entityManager.SetComponentData(_playerEntity, LocalTransform.FromPosition(initPos));
         _entityManager.SetComponentData(_playerEntity, new HealthComponent() { Value = CombatBalance.PlayerMaxHealth, MaxValue = CombatBalance.PlayerMaxHealth});
         _entityManager.SetComponentData(_playerEntity, new PlayerCombatState { SelectedWeapon = WeaponSlot.Pistol });
+        _entityManager.SetComponentData(_playerEntity, new PlayerProgressionState
+        {
+            Level = 1,
+            NextLevelExperience = 10,
+            MoveSpeedMultiplier = 1f,
+            ExperienceRadiusMultiplier = 1f,
+            ExperienceValueMultiplier = 1f
+        });
         _entityManager.SetComponentData(_playerEntity, new PlayerAimComponent { Direction = new float3(0f, 0f, 1f) });
         _entityManager.SetComponentData(_playerEntity, new PlayerDefeatInfo { LastDamageSource = DamageSource.None });
+    }
+
+    private void CreateGameplayTuning()
+    {
+        _gameplayTuningEntity = _entityManager.CreateEntity(typeof(GameplayTuningComponent));
+        _entityManager.SetComponentData(_gameplayTuningEntity, new GameplayTuningComponent
+        {
+            PistolDamage = CombatBalance.PistolDamage,
+            PistolIntervalSeconds = CombatBalance.PistolIntervalSeconds,
+            MachineGunDamage = CombatBalance.MachineGunDamage,
+            MachineGunIntervalSeconds = CombatBalance.MachineGunIntervalSeconds,
+            PlayerBaseSpeed = _playerSpeed,
+            ExperienceRadius = CombatBalance.ExperienceAttractionRadius,
+            ExperienceValueMultiplier = 1f,
+            DashCooldownSeconds = 7f,
+            DashDurationSeconds = 0.75f,
+            DashSpeedMultiplier = 3f,
+            DashInvulnerabilitySeconds = 0.5f
+        });
     }
 
     private void CreateEnemySpawner()

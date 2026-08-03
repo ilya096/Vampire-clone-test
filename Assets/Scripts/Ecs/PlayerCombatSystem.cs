@@ -22,6 +22,8 @@ namespace Assets.Scripts.Ecs
             Entity player = SystemAPI.GetSingletonEntity<PlayerTag>();
             RefRW<PlayerCombatState> combat = SystemAPI.GetComponentRW<PlayerCombatState>(player);
             PlayerAimComponent aim = SystemAPI.GetComponent<PlayerAimComponent>(player);
+            PlayerProgressionState progression = SystemAPI.GetComponent<PlayerProgressionState>(player);
+            GameplayTuningComponent tuning = SystemAPI.GetSingleton<GameplayTuningComponent>();
             LocalTransform playerTransform = SystemAPI.GetComponent<LocalTransform>(player);
             float deltaTime = SystemAPI.Time.DeltaTime;
 
@@ -31,13 +33,13 @@ namespace Assets.Scripts.Ecs
             EntityCommandBuffer commandBuffer = new(Allocator.Temp);
             if (combat.ValueRO.SelectedWeapon == WeaponSlot.Pistol && combat.ValueRO.PistolCooldown <= 0f && HasEnemyInAimCone(ref state, playerTransform.Position, aim.Direction, 0.6f, CombatBalance.PistolRange))
             {
-                CreatePistolProjectile(commandBuffer, playerTransform.Position, aim.Direction);
-                combat.ValueRW.PistolCooldown += CombatBalance.PistolIntervalSeconds;
+                CreatePistolProjectile(commandBuffer, playerTransform.Position, aim.Direction, tuning, progression);
+                combat.ValueRW.PistolCooldown += tuning.PistolIntervalSeconds;
             }
             else if (combat.ValueRO.SelectedWeapon == WeaponSlot.MachineGun && combat.ValueRO.MachineGunCooldown <= 0f)
             {
-                FireMachineGun(ref state, commandBuffer, playerTransform.Position, aim.Direction);
-                combat.ValueRW.MachineGunCooldown += CombatBalance.MachineGunIntervalSeconds;
+                FireMachineGun(ref state, commandBuffer, playerTransform.Position, aim.Direction, tuning, progression);
+                combat.ValueRW.MachineGunCooldown += tuning.MachineGunIntervalSeconds;
             }
 
             commandBuffer.Playback(state.EntityManager);
@@ -59,7 +61,7 @@ namespace Assets.Scripts.Ecs
             return false;
         }
 
-        private void CreatePistolProjectile(EntityCommandBuffer commandBuffer, float3 origin, float3 direction)
+        private void CreatePistolProjectile(EntityCommandBuffer commandBuffer, float3 origin, float3 direction, GameplayTuningComponent tuning, PlayerProgressionState progression)
         {
             Entity projectile = commandBuffer.CreateEntity();
             commandBuffer.AddComponent(projectile, LocalTransform.FromPosition(origin + direction * 0.6f));
@@ -68,16 +70,18 @@ namespace Assets.Scripts.Ecs
                 Direction = direction,
                 Speed = CombatBalance.PistolSpeed,
                 RemainingDistance = CombatBalance.PistolRange,
-                Damage = CombatBalance.PistolDamage,
+                Damage = tuning.PistolDamage,
                 PierceRemaining = 2,
                 DoubleDamageAgainstHeavy = true,
+                ExplosionRadius = progression.PistolExplosion ? 2f : 0f,
+                RicochetRemaining = progression.PistolRicochet ? 2 : 0,
                 Color = new float4(1f, 1f, 1f, 1f),
                 VisualScale = 0.15f
             });
             commandBuffer.AddBuffer<ProjectileHit>(projectile);
         }
 
-        private void FireMachineGun(ref SystemState state, EntityCommandBuffer commandBuffer, float3 origin, float3 aimDirection)
+        private void FireMachineGun(ref SystemState state, EntityCommandBuffer commandBuffer, float3 origin, float3 aimDirection, GameplayTuningComponent tuning, PlayerProgressionState progression)
         {
             float radians = math.radians(CombatBalance.MachineGunSpreadDegrees);
             float spread = UnityEngine.Random.Range(-radians, radians);
@@ -89,9 +93,11 @@ namespace Assets.Scripts.Ecs
                 Direction = direction,
                 Speed = CombatBalance.MachineGunSpeed,
                 RemainingDistance = CombatBalance.MachineGunRange,
-                Damage = CombatBalance.MachineGunDamage,
+                Damage = tuning.MachineGunDamage,
                 PierceRemaining = 0,
                 DoubleDamageAgainstHeavy = false,
+                SlowSeconds = progression.MachineGunSlow ? 1.5f : 0f,
+                ChainLightningRemaining = progression.MachineGunChainLightning ? 2 : 0,
                 Color = new float4(1f, 0.9f, 0.2f, 1f),
                 VisualScale = 0.1f
             });

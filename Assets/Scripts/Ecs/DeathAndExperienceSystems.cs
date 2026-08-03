@@ -56,6 +56,8 @@ namespace Assets.Scripts.Ecs
         {
             Entity player = SystemAPI.GetSingletonEntity<PlayerTag>();
             LocalTransform playerTransform = SystemAPI.GetComponent<LocalTransform>(player);
+            PlayerProgressionState progression = SystemAPI.GetComponent<PlayerProgressionState>(player);
+            GameplayTuningComponent tuning = SystemAPI.GetSingleton<GameplayTuningComponent>();
             float deltaTime = SystemAPI.Time.DeltaTime;
             EntityCommandBuffer commandBuffer = new(Allocator.Temp);
 
@@ -64,7 +66,8 @@ namespace Assets.Scripts.Ecs
             {
                 float3 toPlayer = playerTransform.Position - transform.ValueRO.Position;
                 float distance = math.length(toPlayer);
-                if (distance > pickup.ValueRO.AttractionRadius)
+                float attractionRadius = tuning.ExperienceRadius * progression.ExperienceRadiusMultiplier;
+                if (distance > attractionRadius)
                 {
                     continue;
                 }
@@ -72,7 +75,8 @@ namespace Assets.Scripts.Ecs
                 if (distance <= 0.35f)
                 {
                     RefRW<PlayerCombatState> combat = SystemAPI.GetComponentRW<PlayerCombatState>(player);
-                    combat.ValueRW.Experience += pickup.ValueRO.Value;
+                    int awardedExperience = math.max(1, (int)math.round(pickup.ValueRO.Value * tuning.ExperienceValueMultiplier * progression.ExperienceValueMultiplier));
+                    combat.ValueRW.Experience += awardedExperience;
                     commandBuffer.DestroyEntity(entity);
                     continue;
                 }
