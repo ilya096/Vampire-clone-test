@@ -35,7 +35,29 @@ namespace Assets.Scripts.Ecs
                     }
 
                     CreateDamageRequest(commandBuffer, target, damage);
+                    if (projectile.ValueRO.ExplosionRadius > 0f)
+                    {
+                        CreateAreaDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ExplosionRadius, damage);
+                    }
+                    if (projectile.ValueRO.SlowSeconds > 0f)
+                    {
+                        EnemyBehaviourComponent behaviour = SystemAPI.GetComponent<EnemyBehaviourComponent>(target);
+                        behaviour.SlowRemaining = math.max(behaviour.SlowRemaining, projectile.ValueRO.SlowSeconds);
+                        state.EntityManager.SetComponentData(target, behaviour);
+                    }
+                    if (projectile.ValueRO.ChainLightningRemaining > 0)
+                    {
+                        CreateChainDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ChainLightningRemaining, damage);
+                    }
                     hits.Add(new ProjectileHit { Target = target });
+
+                    if (projectile.ValueRO.RicochetRemaining > 0 && TryFindClosestEnemy(ref state, transform.ValueRO.Position, hits, out Entity ricochetTarget))
+                    {
+                        float3 ricochetPosition = SystemAPI.GetComponent<LocalTransform>(ricochetTarget).Position;
+                        projectile.ValueRW.Direction = math.normalizesafe(ricochetPosition - transform.ValueRO.Position, projectile.ValueRO.Direction);
+                        projectile.ValueRW.RicochetRemaining--;
+                        continue;
+                    }
 
                     bool weakTarget = archetype == EnemyArchetype.Normal || archetype == EnemyArchetype.Swarm;
                     if (weakTarget && projectile.ValueRO.PierceRemaining > 0)
@@ -99,6 +121,48 @@ namespace Assets.Scripts.Ecs
             }
 
             return false;
+        }
+
+        private void CreateAreaDamage(ref SystemState state, EntityCommandBuffer commandBuffer, Entity directTarget, float3 center, float radius, int damage)
+        {
+            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            {
+                if (enemy != directTarget && math.distancesq(enemyTransform.ValueRO.Position, center) <= radius * radius)
+                {
+                    CreateDamageRequest(commandBuffer, enemy, damage);
+                }
+            }
+        }
+
+        private void CreateChainDamage(ref SystemState state, EntityCommandBuffer commandBuffer, Entity directTarget, float3 center, int count, int damage)
+        {
+            int remaining = count;
+            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            {
+                if (remaining <= 0) break;
+                if (enemy != directTarget && math.distancesq(enemyTransform.ValueRO.Position, center) <= 4f * 4f)
+                {
+                    CreateDamageRequest(commandBuffer, enemy, damage);
+                    remaining--;
+                }
+            }
+        }
+
+        private bool TryFindClosestEnemy(ref SystemState state, float3 origin, DynamicBuffer<ProjectileHit> hits, out Entity result)
+        {
+            result = Entity.Null;
+            float closestDistance = float.MaxValue;
+            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            {
+                if (WasHit(hits, enemy)) continue;
+                float distance = math.distancesq(enemyTransform.ValueRO.Position, origin);
+                if (distance < closestDistance && distance <= 8f * 8f)
+                {
+                    closestDistance = distance;
+                    result = enemy;
+                }
+            }
+            return result != Entity.Null;
         }
 
         private void CreateDamageRequest(EntityCommandBuffer commandBuffer, Entity target, int amount)

@@ -43,6 +43,12 @@ namespace Assets.Scripts
                     speed *= 1.5f;
                 }
 
+                behaviour.ValueRW.SlowRemaining = math.max(0f, behaviour.ValueRO.SlowRemaining - deltaTime);
+                if (behaviour.ValueRO.SlowRemaining > 0f)
+                {
+                    speed *= 0.55f;
+                }
+
                 if (archetype.ValueRO.Value == EnemyArchetype.Heavy)
                 {
                     behaviour.ValueRW.DashCooldown -= deltaTime;
