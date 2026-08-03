@@ -239,7 +239,7 @@ public class WaveRuntimeController : MonoBehaviour
 
     private void OnGUI()
     {
-        if (_initialized == false || Phase == FirstArenaPhase.Complete)
+        if (_initialized == false || Phase == FirstArenaPhase.Complete || Time.timeScale == 0f)
         {
             return;
         }

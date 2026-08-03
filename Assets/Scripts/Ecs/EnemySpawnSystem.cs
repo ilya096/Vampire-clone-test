@@ -3,6 +3,7 @@ using System.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using UnityEngine.AI;
 
 namespace Assets.Scripts.Ecs
 {
@@ -43,6 +44,13 @@ namespace Assets.Scripts.Ecs
 			float3 playerPosition = GetPlayerPosition(ref state);
 			var random = new Unity.Mathematics.Random(spawnState.ValueRO.RandomState == 0 ? 1u : spawnState.ValueRO.RandomState);
 			float3 spawnPosition = GetSpawnPosition(playerPosition, config.SpawnRadius, ref random);
+			if (NavMesh.SamplePosition(new Vector3(spawnPosition.x, spawnPosition.y, spawnPosition.z), out NavMeshHit navMeshHit, 2f, NavMesh.AllAreas) == false)
+			{
+				spawnState.ValueRW.RandomState = random.state;
+				spawnState.ValueRW.TimeToNextSpawn = 0.1f;
+				return;
+			}
+			spawnPosition = new float3(navMeshHit.position.x, navMeshHit.position.y, navMeshHit.position.z);
 			EnemyArchetype archetype = GetArchetype(ref random);
 			spawnState.ValueRW.RandomState = random.state;
 			CreateEnemy(ref state, spawnPosition, archetype);
