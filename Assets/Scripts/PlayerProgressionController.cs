@@ -25,6 +25,7 @@ public class PlayerProgressionController : MonoBehaviour
     private Rarity[] _rarities = new Rarity[3];
     private bool _choiceOpen;
     private SpecialWeapon _specialWeapon;
+    private GUIStyle _experienceBarLabelStyle;
 
     public void Initialize(World world, Entity playerEntity)
     {
@@ -105,6 +106,13 @@ public class PlayerProgressionController : MonoBehaviour
 
     private void OnGUI()
     {
+        if (_world == null || _world.IsCreated == false || _entityManager.Exists(_playerEntity) == false)
+        {
+            return;
+        }
+
+        DrawExperienceProgress();
+
         if (_choiceOpen == false)
         {
             return;
@@ -124,6 +132,43 @@ public class PlayerProgressionController : MonoBehaviour
             }
             GUI.color = previousColor;
         }
+    }
+
+    private void DrawExperienceProgress()
+    {
+        PlayerCombatState combat = _entityManager.GetComponentData<PlayerCombatState>(_playerEntity);
+        PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
+        int experienceRequirement = Mathf.Max(1, progression.NextLevelExperience);
+        float fill = Mathf.Clamp01(combat.Experience / (float)experienceRequirement);
+
+        const float horizontalInset = 10f;
+        const float bottomInset = 4f;
+        const float frameHeight = 26f;
+        Rect frame = new(horizontalInset, Screen.height - frameHeight - bottomInset, Screen.width - horizontalInset * 2f, frameHeight);
+        Rect inner = new(frame.x + 3f, frame.y + 3f, frame.width - 6f, frame.height - 6f);
+        Rect fillRect = new(inner.x, inner.y, inner.width * fill, inner.height);
+
+        Color previousColor = GUI.color;
+        GUI.color = new Color(0.01f, 0.04f, 0.08f, 0.94f);
+        GUI.DrawTexture(frame, Texture2D.whiteTexture);
+        GUI.color = new Color(0.04f, 0.16f, 0.21f, 1f);
+        GUI.DrawTexture(inner, Texture2D.whiteTexture);
+        GUI.color = new Color(0.05f, 0.78f, 0.95f, 1f);
+        GUI.DrawTexture(fillRect, Texture2D.whiteTexture);
+        GUI.color = previousColor;
+
+        if (_experienceBarLabelStyle == null)
+        {
+            _experienceBarLabelStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 14,
+                fontStyle = FontStyle.Bold
+            };
+            _experienceBarLabelStyle.normal.textColor = Color.white;
+        }
+
+        GUI.Label(frame, $"УРОВЕНЬ {progression.Level}    XP {combat.Experience} / {experienceRequirement}", _experienceBarLabelStyle);
     }
 
     private void Select(int index)
