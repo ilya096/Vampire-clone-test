@@ -5,6 +5,8 @@ using UnityEngine;
 /// <summary>Runtime card choices for the first playable progression slice.</summary>
 public class PlayerProgressionController : MonoBehaviour
 {
+    private const string ProgressionLogPrefix = "[Logo Survivor][Progression]";
+
     private enum CardKind { PistolDamage, PistolFireRate, MachineGunDamage, MachineGunFireRate, MoveSpeed, ReactiveDash, ExperienceRadius, ExperienceValue, MaxHealth, HealthRegeneration }
     private enum Rarity { Green, Blue, Purple, Gold }
     private enum SpecialWeapon { None, Pistol, MachineGun }
@@ -79,6 +81,7 @@ public class PlayerProgressionController : MonoBehaviour
         }
 
         _specialWeapon = SpecialWeapon.None;
+        Debug.Log($"{ProgressionLogPrefix} Открыт обычный выбор: {GetNormalOfferLog()}");
         OpenChoice();
     }
 
@@ -132,44 +135,99 @@ public class PlayerProgressionController : MonoBehaviour
             return;
         }
 
-        ApplyCard(_offers[index], GetRarityMultiplier(_rarities[index]));
+        ApplyCard(_offers[index], _rarities[index], GetRarityMultiplier(_rarities[index]));
         PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
         progression.Level++;
         progression.NextLevelExperience = Mathf.CeilToInt(progression.NextLevelExperience * 1.45f);
         _entityManager.SetComponentData(_playerEntity, progression);
+        Debug.Log($"{ProgressionLogPrefix} Уровень применён: level={progression.Level}, следующий XP-порог={progression.NextLevelExperience}, оружейные апгрейды: pistol={progression.PistolUpgradeCount}, machine gun={progression.MachineGunUpgradeCount}.");
 
-        if ((progression.PistolUpgradeCount > 0 && progression.PistolUpgradeCount % 3 == 0) || (progression.MachineGunUpgradeCount > 0 && progression.MachineGunUpgradeCount % 3 == 0))
+        bool pistolSpecialReady = progression.PistolUpgradeCount > 0 && progression.PistolUpgradeCount % 3 == 0;
+        bool machineGunSpecialReady = progression.MachineGunUpgradeCount > 0 && progression.MachineGunUpgradeCount % 3 == 0;
+        if (pistolSpecialReady || machineGunSpecialReady)
         {
-            _specialWeapon = progression.PistolUpgradeCount % 3 == 0 ? SpecialWeapon.Pistol : SpecialWeapon.MachineGun;
+            _specialWeapon = pistolSpecialReady ? SpecialWeapon.Pistol : SpecialWeapon.MachineGun;
+            Debug.Log($"{ProgressionLogPrefix} Открыт special-выбор для {GetSpecialWeaponName(_specialWeapon)}. Варианты: 1) {GetSpecialLabel(0).Replace("\n", " — ")}; 2) {GetSpecialLabel(1).Replace("\n", " — ")}." +
+                      (pistolSpecialReady && machineGunSpecialReady ? " Одновременно готовы оба оружия; в текущем MVP первым показывается пистолет." : string.Empty));
             return;
         }
 
         CloseChoice();
     }
 
-    private void ApplyCard(CardKind kind, float multiplier)
+    private void ApplyCard(CardKind kind, Rarity rarity, float multiplier)
     {
         GameplayTuningComponent tuning = _entityManager.GetComponentData<GameplayTuningComponent>(_entityManager.CreateEntityQuery(ComponentType.ReadOnly<GameplayTuningComponent>()).GetSingletonEntity());
         PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
         HealthComponent health = _entityManager.GetComponentData<HealthComponent>(_playerEntity);
+        string result;
         switch (kind)
         {
-            case CardKind.PistolDamage: tuning.PistolDamage += Mathf.CeilToInt(5f * multiplier); progression.PistolUpgradeCount++; break;
-            case CardKind.PistolFireRate: tuning.PistolIntervalSeconds = Mathf.Max(0.1f, tuning.PistolIntervalSeconds - 0.05f * multiplier); progression.PistolUpgradeCount++; break;
-            case CardKind.MachineGunDamage: tuning.MachineGunDamage += Mathf.CeilToInt(2f * multiplier); progression.MachineGunUpgradeCount++; break;
-            case CardKind.MachineGunFireRate: tuning.MachineGunIntervalSeconds = Mathf.Max(0.04f, tuning.MachineGunIntervalSeconds - 0.02f * multiplier); progression.MachineGunUpgradeCount++; break;
-            case CardKind.MoveSpeed: progression.MoveSpeedMultiplier += 0.08f * multiplier; break;
-            case CardKind.ReactiveDash: progression.DashUnlocked = true; break;
-            case CardKind.ExperienceRadius: progression.ExperienceRadiusMultiplier += 0.2f * multiplier; break;
-            case CardKind.ExperienceValue: progression.ExperienceValueMultiplier += 0.15f * multiplier; break;
-            case CardKind.MaxHealth: health.MaxValue += Mathf.CeilToInt(15f * multiplier); health.Value = health.MaxValue; break;
-            case CardKind.HealthRegeneration: progression.HealthRegenerationPerSecond += 0.5f * multiplier; break;
+            case CardKind.PistolDamage:
+                int previousPistolDamage = tuning.PistolDamage;
+                tuning.PistolDamage += Mathf.CeilToInt(5f * multiplier);
+                progression.PistolUpgradeCount++;
+                result = $"урон пистолета {previousPistolDamage} -> {tuning.PistolDamage}";
+                break;
+            case CardKind.PistolFireRate:
+                float previousPistolInterval = tuning.PistolIntervalSeconds;
+                tuning.PistolIntervalSeconds = Mathf.Max(0.1f, tuning.PistolIntervalSeconds - 0.05f * multiplier);
+                progression.PistolUpgradeCount++;
+                result = $"интервал пистолета {previousPistolInterval:F3}s -> {tuning.PistolIntervalSeconds:F3}s";
+                break;
+            case CardKind.MachineGunDamage:
+                int previousMachineGunDamage = tuning.MachineGunDamage;
+                tuning.MachineGunDamage += Mathf.CeilToInt(2f * multiplier);
+                progression.MachineGunUpgradeCount++;
+                result = $"урон пулемёта {previousMachineGunDamage} -> {tuning.MachineGunDamage}";
+                break;
+            case CardKind.MachineGunFireRate:
+                float previousMachineGunInterval = tuning.MachineGunIntervalSeconds;
+                tuning.MachineGunIntervalSeconds = Mathf.Max(0.04f, tuning.MachineGunIntervalSeconds - 0.02f * multiplier);
+                progression.MachineGunUpgradeCount++;
+                result = $"интервал пулемёта {previousMachineGunInterval:F3}s -> {tuning.MachineGunIntervalSeconds:F3}s";
+                break;
+            case CardKind.MoveSpeed:
+                float previousMoveSpeed = progression.MoveSpeedMultiplier;
+                progression.MoveSpeedMultiplier += 0.08f * multiplier;
+                result = $"множитель скорости {previousMoveSpeed:F2} -> {progression.MoveSpeedMultiplier:F2}";
+                break;
+            case CardKind.ReactiveDash:
+                bool dashWasUnlocked = progression.DashUnlocked;
+                progression.DashUnlocked = true;
+                result = dashWasUnlocked ? "реактивный рывок уже был открыт" : "реактивный рывок открыт";
+                break;
+            case CardKind.ExperienceRadius:
+                float previousExperienceRadius = progression.ExperienceRadiusMultiplier;
+                progression.ExperienceRadiusMultiplier += 0.2f * multiplier;
+                result = $"множитель радиуса XP {previousExperienceRadius:F2} -> {progression.ExperienceRadiusMultiplier:F2}";
+                break;
+            case CardKind.ExperienceValue:
+                float previousExperienceValue = progression.ExperienceValueMultiplier;
+                progression.ExperienceValueMultiplier += 0.15f * multiplier;
+                result = $"множитель ценности XP {previousExperienceValue:F2} -> {progression.ExperienceValueMultiplier:F2}";
+                break;
+            case CardKind.MaxHealth:
+                int previousMaxHealth = health.MaxValue;
+                health.MaxValue += Mathf.CeilToInt(15f * multiplier);
+                health.Value = health.MaxValue;
+                result = $"макс. HP {previousMaxHealth} -> {health.MaxValue}; HP восстановлено до {health.Value}";
+                break;
+            case CardKind.HealthRegeneration:
+                float previousRegeneration = progression.HealthRegenerationPerSecond;
+                progression.HealthRegenerationPerSecond += 0.5f * multiplier;
+                result = $"регенерация HP {previousRegeneration:F2}/s -> {progression.HealthRegenerationPerSecond:F2}/s";
+                break;
+            default:
+                result = "неизвестный эффект";
+                break;
         }
 
         Entity tuningEntity = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<GameplayTuningComponent>()).GetSingletonEntity();
         _entityManager.SetComponentData(tuningEntity, tuning);
         _entityManager.SetComponentData(_playerEntity, progression);
         _entityManager.SetComponentData(_playerEntity, health);
+        Debug.Log($"{ProgressionLogPrefix} Получен апгрейд: {GetCardName(kind)} ({GetRarityName(rarity)}, x{multiplier:F1}) — {result}.");
     }
 
     private void ApplySpecial(int index)
@@ -186,6 +244,7 @@ public class PlayerProgressionController : MonoBehaviour
             progression.MachineGunChainLightning = index == 1;
         }
         _entityManager.SetComponentData(_playerEntity, progression);
+        Debug.Log($"{ProgressionLogPrefix} Получен special-апгрейд {GetSpecialWeaponName(_specialWeapon)}: {GetSpecialLabel(index).Replace("\n", " — ")}." );
     }
 
     private string GetSpecialLabel(int index) => _specialWeapon switch
@@ -195,6 +254,46 @@ public class PlayerProgressionController : MonoBehaviour
     };
 
     private static string GetCardLabel(CardKind kind, Rarity rarity) => $"{rarity}\n{kind}";
+    private string GetNormalOfferLog()
+    {
+        PlayerCombatState combat = _entityManager.GetComponentData<PlayerCombatState>(_playerEntity);
+        PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
+        return $"level={progression.Level}, XP={combat.Experience}/{progression.NextLevelExperience}; " +
+               $"1) {GetRarityName(_rarities[0])} {GetCardName(_offers[0])} (x{GetRarityMultiplier(_rarities[0]):F1}); " +
+               $"2) {GetRarityName(_rarities[1])} {GetCardName(_offers[1])} (x{GetRarityMultiplier(_rarities[1]):F1}); " +
+               $"3) {GetRarityName(_rarities[2])} {GetCardName(_offers[2])} (x{GetRarityMultiplier(_rarities[2]):F1}).";
+    }
+
+    private static string GetCardName(CardKind kind) => kind switch
+    {
+        CardKind.PistolDamage => "Урон пистолета",
+        CardKind.PistolFireRate => "Скорострельность пистолета",
+        CardKind.MachineGunDamage => "Урон пулемёта",
+        CardKind.MachineGunFireRate => "Скорострельность пулемёта",
+        CardKind.MoveSpeed => "Скорость бега",
+        CardKind.ReactiveDash => "Реактивный рывок",
+        CardKind.ExperienceRadius => "Радиус сбора XP",
+        CardKind.ExperienceValue => "Ценность XP",
+        CardKind.MaxHealth => "Максимум HP",
+        CardKind.HealthRegeneration => "Регенерация HP",
+        _ => kind.ToString()
+    };
+
+    private static string GetRarityName(Rarity rarity) => rarity switch
+    {
+        Rarity.Green => "Зелёный",
+        Rarity.Blue => "Синий",
+        Rarity.Purple => "Фиолетовый",
+        Rarity.Gold => "Золотой",
+        _ => rarity.ToString()
+    };
+
+    private static string GetSpecialWeaponName(SpecialWeapon weapon) => weapon switch
+    {
+        SpecialWeapon.Pistol => "пистолета",
+        SpecialWeapon.MachineGun => "пулемёта",
+        _ => "неизвестного оружия"
+    };
     private static Rarity RollRarity(System.Random random) => random.Next(100) switch { < 70 => Rarity.Green, < 90 => Rarity.Blue, < 98 => Rarity.Purple, _ => Rarity.Gold };
     private static float GetRarityMultiplier(Rarity rarity) => rarity switch { Rarity.Blue => 1.5f, Rarity.Purple => 2f, Rarity.Gold => 3f, _ => 1f };
     private static Color GetRarityColor(Rarity rarity) => rarity switch { Rarity.Blue => new Color(0.35f, 0.65f, 1f), Rarity.Purple => new Color(0.75f, 0.4f, 1f), Rarity.Gold => new Color(1f, 0.8f, 0.2f), _ => new Color(0.4f, 1f, 0.4f) };
