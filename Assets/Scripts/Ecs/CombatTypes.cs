@@ -36,6 +36,9 @@ namespace Assets.Scripts.Ecs
         public float DashCooldown;
         public float DashRemaining;
         public float SlowRemaining;
+        public float BurnRemaining;
+        public float BurnTickAccumulator;
+        public int BurnDamagePerTick;
     }
 
     public struct PlayerCombatState : IComponentData
@@ -43,6 +46,7 @@ namespace Assets.Scripts.Ecs
         public WeaponSlot SelectedWeapon;
         public float PistolCooldown;
         public float MachineGunCooldown;
+        public float MachineGunContinuousFireSeconds;
         public int Experience;
     }
 
@@ -63,8 +67,16 @@ namespace Assets.Scripts.Ecs
         public float InvulnerabilityRemaining;
         public bool PistolExplosion;
         public bool PistolRicochet;
+        public bool PistolPiercing;
+        public bool PistolSplitShot;
+        public bool PistolHeavyBullet;
+        public bool PistolElementalCharge;
         public bool MachineGunSlow;
         public bool MachineGunChainLightning;
+        public bool MachineGunPiercing;
+        public bool MachineGunScatter;
+        public bool MachineGunOverheat;
+        public bool MachineGunElectricStorm;
     }
 
     public struct GameplayTuningComponent : IComponentData
@@ -100,6 +112,10 @@ namespace Assets.Scripts.Ecs
         public int RicochetRemaining;
         public float SlowSeconds;
         public int ChainLightningRemaining;
+        public float BurnSeconds;
+        public int BurnDamagePerTick;
+        public float ElectricStormRadius;
+        public float ElectricStormDamageMultiplier;
         public float4 Color;
         public float VisualScale;
     }

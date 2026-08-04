@@ -49,6 +49,19 @@ namespace Assets.Scripts.Ecs
                     {
                         CreateChainDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ChainLightningRemaining, damage);
                     }
+                    if (projectile.ValueRO.BurnSeconds > 0f)
+                    {
+                        EnemyBehaviourComponent behaviour = SystemAPI.GetComponent<EnemyBehaviourComponent>(target);
+                        behaviour.BurnRemaining = math.max(behaviour.BurnRemaining, projectile.ValueRO.BurnSeconds);
+                        behaviour.BurnDamagePerTick = math.max(behaviour.BurnDamagePerTick, projectile.ValueRO.BurnDamagePerTick);
+                        behaviour.BurnTickAccumulator = 0f;
+                        state.EntityManager.SetComponentData(target, behaviour);
+                    }
+                    if (projectile.ValueRO.ElectricStormRadius > 0f)
+                    {
+                        int stormDamage = math.max(1, (int)math.ceil(damage * projectile.ValueRO.ElectricStormDamageMultiplier));
+                        CreateAreaDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ElectricStormRadius, stormDamage);
+                    }
                     hits.Add(new ProjectileHit { Target = target });
 
                     if (projectile.ValueRO.RicochetRemaining > 0 && TryFindClosestEnemy(ref state, transform.ValueRO.Position, hits, out Entity ricochetTarget))
@@ -77,6 +90,23 @@ namespace Assets.Scripts.Ecs
                 if (projectile.ValueRO.RemainingDistance <= 0f)
                 {
                     commandBuffer.DestroyEntity(entity);
+                }
+            }
+
+            foreach ((RefRW<EnemyBehaviourComponent> behaviour, Entity enemy) in SystemAPI.Query<RefRW<EnemyBehaviourComponent>>().WithAll<EnemyTag>().WithEntityAccess())
+            {
+                if (behaviour.ValueRO.BurnRemaining <= 0f)
+                {
+                    continue;
+                }
+
+                behaviour.ValueRW.BurnRemaining = math.max(0f, behaviour.ValueRO.BurnRemaining - deltaTime);
+                behaviour.ValueRW.BurnTickAccumulator += deltaTime;
+                if (behaviour.ValueRO.BurnTickAccumulator >= 1f)
+                {
+                    int tickCount = (int)math.floor(behaviour.ValueRO.BurnTickAccumulator);
+                    behaviour.ValueRW.BurnTickAccumulator -= tickCount;
+                    CreateDamageRequest(commandBuffer, enemy, behaviour.ValueRO.BurnDamagePerTick * tickCount);
                 }
             }
 

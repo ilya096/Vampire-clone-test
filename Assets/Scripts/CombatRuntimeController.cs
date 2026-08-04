@@ -114,7 +114,8 @@ public class CombatRuntimeController : MonoBehaviour
     {
         HealthComponent health = _entityManager.GetComponentData<HealthComponent>(_playerEntity);
         PlayerCombatState combat = _entityManager.GetComponentData<PlayerCombatState>(_playerEntity);
-        _hud?.Refresh(health.Value, health.MaxValue, combat.Experience, (int)combat.SelectedWeapon);
+        PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
+        _hud?.Refresh(health.Value, health.MaxValue, combat.Experience, (int)combat.SelectedWeapon, progression.PistolUpgradeCount, progression.MachineGunUpgradeCount);
 
         if (health.Value <= 0)
         {

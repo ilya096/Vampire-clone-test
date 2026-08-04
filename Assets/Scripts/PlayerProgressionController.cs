@@ -1,4 +1,5 @@
 using Assets.Scripts.Ecs;
+using System.Collections.Generic;
 using Unity.Entities;
 using UnityEngine;
 
@@ -25,6 +26,7 @@ public class PlayerProgressionController : MonoBehaviour
     private Rarity[] _rarities = new Rarity[3];
     private bool _choiceOpen;
     private SpecialWeapon _specialWeapon;
+    private int _specialTier;
     private GUIStyle _experienceBarLabelStyle;
 
     public void Initialize(World world, Entity playerEntity)
@@ -73,10 +75,21 @@ public class PlayerProgressionController : MonoBehaviour
     private void OpenNormalChoice()
     {
         var random = new System.Random();
+        PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
+        var availableCards = new List<CardKind>(_allCards.Length);
+        foreach (CardKind card in _allCards)
+        {
+            if (IsCardAvailable(card, progression))
+            {
+                availableCards.Add(card);
+            }
+        }
+
         for (int index = 0; index < _offers.Length; index++)
         {
-            CardKind candidate;
-            do candidate = _allCards[random.Next(_allCards.Length)]; while (ContainsBefore(index, candidate));
+            int candidateIndex = random.Next(availableCards.Count);
+            CardKind candidate = availableCards[candidateIndex];
+            availableCards.RemoveAt(candidateIndex);
             _offers[index] = candidate;
             _rarities[index] = RollRarity(random);
         }
@@ -86,11 +99,12 @@ public class PlayerProgressionController : MonoBehaviour
         OpenChoice();
     }
 
-    private bool ContainsBefore(int exclusiveIndex, CardKind candidate)
+    private static bool IsCardAvailable(CardKind card, PlayerProgressionState progression) => card switch
     {
-        for (int index = 0; index < exclusiveIndex; index++) if (_offers[index] == candidate) return true;
-        return false;
-    }
+        CardKind.PistolDamage or CardKind.PistolFireRate => progression.PistolUpgradeCount < 9,
+        CardKind.MachineGunDamage or CardKind.MachineGunFireRate => progression.MachineGunUpgradeCount < 9,
+        _ => true
+    };
 
     private void OpenChoice()
     {
@@ -182,18 +196,17 @@ public class PlayerProgressionController : MonoBehaviour
 
         ApplyCard(_offers[index], _rarities[index], GetRarityMultiplier(_rarities[index]));
         PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
+        PlayerCombatState combat = _entityManager.GetComponentData<PlayerCombatState>(_playerEntity);
+        int spentExperience = progression.NextLevelExperience;
+        combat.Experience = Mathf.Max(0, combat.Experience - spentExperience);
         progression.Level++;
         progression.NextLevelExperience = Mathf.CeilToInt(progression.NextLevelExperience * 1.45f);
+        _entityManager.SetComponentData(_playerEntity, combat);
         _entityManager.SetComponentData(_playerEntity, progression);
-        Debug.Log($"{ProgressionLogPrefix} Уровень применён: level={progression.Level}, следующий XP-порог={progression.NextLevelExperience}, оружейные апгрейды: pistol={progression.PistolUpgradeCount}, machine gun={progression.MachineGunUpgradeCount}.");
+        Debug.Log($"{ProgressionLogPrefix} Уровень применён: потрачено XP={spentExperience}, остаток XP={combat.Experience}, level={progression.Level}, следующий XP-порог={progression.NextLevelExperience}, оружейные апгрейды: pistol={progression.PistolUpgradeCount}, machine gun={progression.MachineGunUpgradeCount}.");
 
-        bool pistolSpecialReady = progression.PistolUpgradeCount > 0 && progression.PistolUpgradeCount % 3 == 0;
-        bool machineGunSpecialReady = progression.MachineGunUpgradeCount > 0 && progression.MachineGunUpgradeCount % 3 == 0;
-        if (pistolSpecialReady || machineGunSpecialReady)
+        if (TryOpenSpecialChoice(_offers[index], progression))
         {
-            _specialWeapon = pistolSpecialReady ? SpecialWeapon.Pistol : SpecialWeapon.MachineGun;
-            Debug.Log($"{ProgressionLogPrefix} Открыт special-выбор для {GetSpecialWeaponName(_specialWeapon)}. Варианты: 1) {GetSpecialLabel(0).Replace("\n", " — ")}; 2) {GetSpecialLabel(1).Replace("\n", " — ")}." +
-                      (pistolSpecialReady && machineGunSpecialReady ? " Одновременно готовы оба оружия; в текущем MVP первым показывается пистолет." : string.Empty));
             return;
         }
 
@@ -240,7 +253,16 @@ public class PlayerProgressionController : MonoBehaviour
             case CardKind.ReactiveDash:
                 bool dashWasUnlocked = progression.DashUnlocked;
                 progression.DashUnlocked = true;
-                result = dashWasUnlocked ? "реактивный рывок уже был открыт" : "реактивный рывок открыт";
+                if (dashWasUnlocked)
+                {
+                    float previousDashCooldown = tuning.DashCooldownSeconds;
+                    tuning.DashCooldownSeconds = Mathf.Max(2f, tuning.DashCooldownSeconds * 0.85f);
+                    result = $"cooldown реактивного рывка {previousDashCooldown:F2}s -> {tuning.DashCooldownSeconds:F2}s";
+                }
+                else
+                {
+                    result = "реактивный рывок открыт";
+                }
                 break;
             case CardKind.ExperienceRadius:
                 float previousExperienceRadius = progression.ExperienceRadiusMultiplier;
@@ -255,8 +277,7 @@ public class PlayerProgressionController : MonoBehaviour
             case CardKind.MaxHealth:
                 int previousMaxHealth = health.MaxValue;
                 health.MaxValue += Mathf.CeilToInt(15f * multiplier);
-                health.Value = health.MaxValue;
-                result = $"макс. HP {previousMaxHealth} -> {health.MaxValue}; HP восстановлено до {health.Value}";
+                result = $"макс. HP {previousMaxHealth} -> {health.MaxValue}; текущее HP не изменено ({health.Value})";
                 break;
             case CardKind.HealthRegeneration:
                 float previousRegeneration = progression.HealthRegenerationPerSecond;
@@ -280,22 +301,64 @@ public class PlayerProgressionController : MonoBehaviour
         PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
         if (_specialWeapon == SpecialWeapon.Pistol)
         {
-            progression.PistolExplosion = index == 0;
-            progression.PistolRicochet = index == 1;
+            switch (_specialTier)
+            {
+                case 1: progression.PistolExplosion = index == 0; progression.PistolRicochet = index == 1; break;
+                case 2: progression.PistolPiercing = index == 0; progression.PistolSplitShot = index == 1; break;
+                case 3: progression.PistolHeavyBullet = index == 0; progression.PistolElementalCharge = index == 1; break;
+            }
         }
         else
         {
-            progression.MachineGunSlow = index == 0;
-            progression.MachineGunChainLightning = index == 1;
+            switch (_specialTier)
+            {
+                case 1: progression.MachineGunSlow = index == 0; progression.MachineGunChainLightning = index == 1; break;
+                case 2: progression.MachineGunPiercing = index == 0; progression.MachineGunScatter = index == 1; break;
+                case 3: progression.MachineGunOverheat = index == 0; progression.MachineGunElectricStorm = index == 1; break;
+            }
         }
         _entityManager.SetComponentData(_playerEntity, progression);
-        Debug.Log($"{ProgressionLogPrefix} Получен special-апгрейд {GetSpecialWeaponName(_specialWeapon)}: {GetSpecialLabel(index).Replace("\n", " — ")}." );
+        Debug.Log($"{ProgressionLogPrefix} Получен special-апгрейд {GetSpecialWeaponName(_specialWeapon)} tier {_specialTier}: {GetSpecialLabel(index).Replace("\n", " — ")}." );
     }
+
+    private bool TryOpenSpecialChoice(CardKind appliedCard, PlayerProgressionState progression)
+    {
+        if (IsPistolCard(appliedCard) && progression.PistolUpgradeCount > 0 && progression.PistolUpgradeCount % 3 == 0)
+        {
+            _specialWeapon = SpecialWeapon.Pistol;
+            _specialTier = progression.PistolUpgradeCount / 3;
+        }
+        else if (IsMachineGunCard(appliedCard) && progression.MachineGunUpgradeCount > 0 && progression.MachineGunUpgradeCount % 3 == 0)
+        {
+            _specialWeapon = SpecialWeapon.MachineGun;
+            _specialTier = progression.MachineGunUpgradeCount / 3;
+        }
+        else
+        {
+            return false;
+        }
+
+        Debug.Log($"{ProgressionLogPrefix} Открыт special-выбор для {GetSpecialWeaponName(_specialWeapon)} tier {_specialTier}/3. Варианты: 1) {GetSpecialLabel(0).Replace("\n", " — ")}; 2) {GetSpecialLabel(1).Replace("\n", " — ")}.");
+        return true;
+    }
+
+    private static bool IsPistolCard(CardKind kind) => kind is CardKind.PistolDamage or CardKind.PistolFireRate;
+    private static bool IsMachineGunCard(CardKind kind) => kind is CardKind.MachineGunDamage or CardKind.MachineGunFireRate;
 
     private string GetSpecialLabel(int index) => _specialWeapon switch
     {
-        SpecialWeapon.Pistol => index == 0 ? "ВЗРЫВ\nПистолет поражает группу" : "РИКОШЕТ\nПуля ищет новую цель",
-        _ => index == 0 ? "ЗАМЕДЛЕНИЕ\nОчередь тормозит врагов" : "ЦЕПНАЯ МОЛНИЯ\nВыстрел бьёт по соседям"
+        SpecialWeapon.Pistol => _specialTier switch
+        {
+            1 => index == 0 ? "ВЗРЫВ\nПистолет поражает группу" : "РИКОШЕТ\nПуля ищет новую цель",
+            2 => index == 0 ? "ПРОБИТИЕ\nПуля проходит ещё через две цели" : "РАЗДВОЕННЫЙ ВЫСТРЕЛ\nТри пули веером",
+            _ => index == 0 ? "ТЯЖЁЛАЯ ПУЛЯ\n×2,5 урона, медленнее" : "СТИХИЙНЫЙ ЗАРЯД\nГорение 3 секунды"
+        },
+        _ => _specialTier switch
+        {
+            1 => index == 0 ? "ЗАМЕДЛЕНИЕ\nОчередь тормозит врагов" : "ЦЕПНАЯ МОЛНИЯ\nВыстрел бьёт по соседям",
+            2 => index == 0 ? "ПРОШИВАЮЩАЯ ОЧЕРЕДЬ\nПуля проходит ещё через три цели" : "КАРТЕЧЬ\nПять дробин веером",
+            _ => index == 0 ? "ПЕРЕГРЕВ\nПосле 1,5 с ×1,5 урона и темпа" : "ЭЛЕКТРИЧЕСКАЯ БУРЯ\nРазряд вокруг попадания"
+        }
     };
 
     private static string GetCardLabel(CardKind kind, Rarity rarity) => $"{rarity}\n{kind}";
