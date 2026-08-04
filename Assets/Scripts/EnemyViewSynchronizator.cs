@@ -74,7 +74,7 @@ namespace Assets.Scripts
             return agent.Warp(hit.position);
         }
 
-        public void ConfigureEnemyView(Entity enemy, EnemyArchetype archetype)
+        public void ConfigureEnemyView(Entity enemy, EnemyArchetype archetype, bool isBurning)
         {
             if (_views.TryGetValue(enemy, out GameObject view) == false)
             {
@@ -88,6 +88,11 @@ namespace Assets.Scripts
                 EnemyArchetype.Ranged => (new Color(0.2f, 0.8f, 1f), 0.9f),
                 _ => (new Color(0.8f, 0.8f, 0.8f), 1f)
             };
+
+            if (isBurning)
+            {
+                color = Color.Lerp(color, new Color(1f, 0.25f, 0.02f), 0.8f);
+            }
 
             view.transform.localScale = Vector3.one * scale;
             foreach (var renderer in view.GetComponentsInChildren<Renderer>())

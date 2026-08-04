@@ -31,7 +31,7 @@ namespace Assets.Scripts
                 SystemAPI.Query<RefRW<LocalTransform>, RefRW<EnemyBehaviourComponent>, RefRO<EnemyArchetypeComponent>>().WithAll<EnemyTag>().WithEntityAccess())
             {
                 var agent = _enemyViewSynchronizator.CreateEnemyView(enemy, transform.ValueRO.Position);
-                _enemyViewSynchronizator.ConfigureEnemyView(enemy, archetype.ValueRO.Value);
+                _enemyViewSynchronizator.ConfigureEnemyView(enemy, archetype.ValueRO.Value, behaviour.ValueRO.BurnRemaining > 0f);
                 if (agent.isActiveAndEnabled == false)
                 {
                     continue;

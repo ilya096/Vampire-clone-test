@@ -2,6 +2,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using UnityEngine;
 
 namespace Assets.Scripts.Ecs
 {
@@ -52,10 +53,15 @@ namespace Assets.Scripts.Ecs
                     if (projectile.ValueRO.BurnSeconds > 0f)
                     {
                         EnemyBehaviourComponent behaviour = SystemAPI.GetComponent<EnemyBehaviourComponent>(target);
+                        bool wasBurning = behaviour.BurnRemaining > 0f;
                         behaviour.BurnRemaining = math.max(behaviour.BurnRemaining, projectile.ValueRO.BurnSeconds);
                         behaviour.BurnDamagePerTick = math.max(behaviour.BurnDamagePerTick, projectile.ValueRO.BurnDamagePerTick);
                         behaviour.BurnTickAccumulator = 0f;
                         state.EntityManager.SetComponentData(target, behaviour);
+                        if (wasBurning == false)
+                        {
+                            Debug.Log($"[Logo Survivor][Progression] Горение применено: {projectile.ValueRO.BurnDamagePerTick} урона/с на {projectile.ValueRO.BurnSeconds:F1} с.");
+                        }
                     }
                     if (projectile.ValueRO.ElectricStormRadius > 0f)
                     {
