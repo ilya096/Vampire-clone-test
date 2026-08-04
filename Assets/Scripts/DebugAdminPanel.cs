@@ -15,6 +15,7 @@ public class DebugAdminPanel : MonoBehaviour
     private WaveRuntimeController _waves;
     private bool _paused;
     private bool _debugEnabled;
+    private bool _showSpecialCards;
     private GameplayTuningComponent _initialTuning;
     private PlayerProgressionState _initialProgression;
     private HealthComponent _initialHealth;
@@ -88,7 +89,9 @@ public class DebugAdminPanel : MonoBehaviour
         tuning.ExperienceRadius = DrawValue(panel.x, y, "XP radius", tuning.ExperienceRadius, 0.5f, 12f); y += 25f;
         progression.ExperienceValueMultiplier = DrawValue(panel.x, y, "XP value", progression.ExperienceValueMultiplier, 0.5f, 5f); y += 25f;
         progression.NextLevelExperience = Mathf.RoundToInt(DrawValue(panel.x, y, "Next XP", progression.NextLevelExperience, 1f, 500f)); y += 28f;
-        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс прогрессии")) { ResetProgression(); return; } y += 32f;
+        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс прогрессии")) { ResetProgression(); return; }
+        if (GUI.Button(new Rect(panel.x + 195f, y, 177f, 24f), _showSpecialCards ? "Скрыть special-карты" : "Special-карты...")) _showSpecialCards = !_showSpecialCards;
+        y += 32f;
 
         GUI.Label(new Rect(panel.x + 12f, y, 350f, 20f), "Волны и вагонетка"); y += 22f;
         if (_waves != null)
@@ -103,6 +106,65 @@ public class DebugAdminPanel : MonoBehaviour
         SetTuning(tuning);
         _entityManager.SetComponentData(_player, progression);
         _entityManager.SetComponentData(_player, health);
+
+        if (_showSpecialCards)
+        {
+            DrawSpecialCardsPanel(progression);
+        }
+    }
+
+    private void DrawSpecialCardsPanel(PlayerProgressionState progression)
+    {
+        Rect panel = new(418f, 70f, 370f, 330f);
+        GUI.Box(panel, "SPECIAL-КАРТЫ · прямое включение");
+        float y = panel.y + 30f;
+
+        GUI.Label(new Rect(panel.x + 12f, y, 340f, 20f), "Пистолет"); y += 20f;
+        DrawSpecialPair(panel.x, ref y, "T1", "ВЗРЫВ", progression.PistolExplosion, "РИКОШЕТ", progression.PistolRicochet, out bool pistolExplosion, out bool pistolRicochet);
+        DrawSpecialPair(panel.x, ref y, "T2", "ПРОБИТИЕ", progression.PistolPiercing, "РАЗДВОЕНИЕ", progression.PistolSplitShot, out bool pistolPiercing, out bool pistolSplitShot);
+        DrawSpecialPair(panel.x, ref y, "T3", "ТЯЖЁЛАЯ ПУЛЯ", progression.PistolHeavyBullet, "СТИХИЙНЫЙ ЗАРЯД", progression.PistolElementalCharge, out bool pistolHeavyBullet, out bool pistolElementalCharge);
+
+        GUI.Label(new Rect(panel.x + 12f, y, 340f, 20f), "Пулемёт"); y += 20f;
+        DrawSpecialPair(panel.x, ref y, "T1", "ЗАМЕДЛЕНИЕ", progression.MachineGunSlow, "ЦЕПНАЯ МОЛНИЯ", progression.MachineGunChainLightning, out bool machineGunSlow, out bool machineGunChainLightning);
+        DrawSpecialPair(panel.x, ref y, "T2", "ПРОШИВАНИЕ", progression.MachineGunPiercing, "КАРТЕЧЬ", progression.MachineGunScatter, out bool machineGunPiercing, out bool machineGunScatter);
+        DrawSpecialPair(panel.x, ref y, "T3", "ПЕРЕГРЕВ", progression.MachineGunOverheat, "ЭЛЕКТРО-БУРЯ", progression.MachineGunElectricStorm, out bool machineGunOverheat, out bool machineGunElectricStorm);
+
+        if (GUI.Button(new Rect(panel.x + 12f, y + 2f, 346f, 24f), "Сброс special-карт"))
+        {
+            pistolExplosion = pistolRicochet = pistolPiercing = pistolSplitShot = pistolHeavyBullet = pistolElementalCharge = false;
+            machineGunSlow = machineGunChainLightning = machineGunPiercing = machineGunScatter = machineGunOverheat = machineGunElectricStorm = false;
+        }
+
+        progression.PistolExplosion = pistolExplosion;
+        progression.PistolRicochet = pistolRicochet;
+        progression.PistolPiercing = pistolPiercing;
+        progression.PistolSplitShot = pistolSplitShot;
+        progression.PistolHeavyBullet = pistolHeavyBullet;
+        progression.PistolElementalCharge = pistolElementalCharge;
+        progression.MachineGunSlow = machineGunSlow;
+        progression.MachineGunChainLightning = machineGunChainLightning;
+        progression.MachineGunPiercing = machineGunPiercing;
+        progression.MachineGunScatter = machineGunScatter;
+        progression.MachineGunOverheat = machineGunOverheat;
+        progression.MachineGunElectricStorm = machineGunElectricStorm;
+        _entityManager.SetComponentData(_player, progression);
+    }
+
+    private static void DrawSpecialPair(float x, ref float y, string tier, string firstLabel, bool firstActive, string secondLabel, bool secondActive, out bool firstResult, out bool secondResult)
+    {
+        GUI.Label(new Rect(x + 12f, y + 3f, 24f, 20f), tier);
+        firstResult = DrawSpecialButton(new Rect(x + 40f, y, 150f, 24f), firstLabel, firstActive) ? !firstActive : firstActive;
+        secondResult = DrawSpecialButton(new Rect(x + 202f, y, 156f, 24f), secondLabel, secondActive) ? !secondActive : secondActive;
+        y += 28f;
+    }
+
+    private static bool DrawSpecialButton(Rect rect, string label, bool active)
+    {
+        Color previousColor = GUI.color;
+        GUI.color = active ? new Color(0.25f, 0.95f, 0.35f) : Color.white;
+        bool clicked = GUI.Button(rect, label);
+        GUI.color = previousColor;
+        return clicked;
     }
 
     private float DrawValue(float x, float y, string label, float value, float min, float max)
