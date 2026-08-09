@@ -3,6 +3,13 @@ using Unity.Mathematics;
 
 namespace Assets.Scripts.Ecs
 {
+    public static class CombatPresentationColors
+    {
+        public static readonly float4 MachineGunTracer = new(1f, 0.82f, 0.18f, 1f);
+        public static readonly float4 ChainLightningTracer = new(0.12f, 0.9f, 1f, 1f);
+        public static readonly float4 ElectricStormTracer = new(0.62f, 0.28f, 1f, 1f);
+    }
+
     public enum EnemyArchetype : byte
     {
         Normal,
@@ -153,5 +160,11 @@ namespace Assets.Scripts.Ecs
         public float3 Start;
         public float3 End;
         public float4 Color;
+    }
+
+    public struct DamageNumberEvent : IComponentData
+    {
+        public float3 Position;
+        public int Amount;
     }
 }

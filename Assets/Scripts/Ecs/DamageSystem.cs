@@ -2,6 +2,7 @@
 using Unity.Entities;
 using Unity.Collections;
 using Unity.Mathematics;
+using Unity.Transforms;
 
 namespace Assets.Scripts.Ecs
 {
@@ -46,6 +47,18 @@ namespace Assets.Scripts.Ecs
 
                     RefRW<HealthComponent> health = SystemAPI.GetComponentRW<HealthComponent>(target);
                     health.ValueRW.Value = math.max(0, health.ValueRO.Value - damage.ValueRO.Amount);
+
+                    if (damage.ValueRO.Amount > 0 &&
+                        SystemAPI.HasComponent<EnemyTag>(target) &&
+                        SystemAPI.HasComponent<LocalTransform>(target))
+                    {
+                        Entity damageNumberEvent = commandBuffer.CreateEntity();
+                        commandBuffer.AddComponent(damageNumberEvent, new DamageNumberEvent
+                        {
+                            Position = SystemAPI.GetComponent<LocalTransform>(target).Position,
+                            Amount = damage.ValueRO.Amount
+                        });
+                    }
 
                     if (SystemAPI.HasComponent<PlayerTag>(target) && damage.ValueRO.Source != DamageSource.None)
                     {

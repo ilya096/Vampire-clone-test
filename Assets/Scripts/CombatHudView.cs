@@ -64,6 +64,10 @@ public class CombatHudView : MonoBehaviour
         {
             _defeatText.gameObject.SetActive(true);
             _defeatText.enabled = true;
+            if (RuntimeGuiPresentation.Font != null)
+            {
+                _defeatText.font = RuntimeGuiPresentation.Font;
+            }
             _defeatText.color = Color.white;
             _defeatText.fontSize = 36;
             _defeatText.verticalOverflow = VerticalWrapMode.Overflow;
@@ -80,6 +84,7 @@ public class CombatHudView : MonoBehaviour
             return;
         }
 
+        RuntimeGuiPresentation.ApplyFontToCurrentSkin();
         DrawBottomHud();
     }
 
@@ -152,6 +157,7 @@ public class CombatHudView : MonoBehaviour
         if (_centerLabelStyle == null)
         {
             _centerLabelStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+            RuntimeGuiPresentation.ApplyFont(_centerLabelStyle);
         }
 
         _centerLabelStyle.fontSize = fontSize;

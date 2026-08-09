@@ -3,6 +3,7 @@ using Unity.Entities;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
+using System.Text;
 
 /// <summary>
 /// Local-only tuning surface. It is hidden until Shift+Num0 is pressed inside pause.
@@ -24,6 +25,11 @@ public class DebugAdminPanel : MonoBehaviour
     private float _initialEscortSpeed;
     private float _initialEscortRadius;
     private readonly Dictionary<string, string> _valueInputs = new();
+    private bool _showRuntimeLog;
+    private Vector2 _runtimeLogScroll;
+    private bool _scrollRuntimeLogToBottom;
+    private GUIStyle _runtimeLogStyle;
+    private int _observedRuntimeLogVersion;
 
     public void Initialize(World world, Entity player)
     {
@@ -65,7 +71,26 @@ public class DebugAdminPanel : MonoBehaviour
             return;
         }
 
+        RuntimeGuiPresentation.ApplyFontToCurrentSkin();
         GUI.Box(new Rect(Screen.width * 0.5f - 160f, 20f, 320f, 34f), _debugEnabled ? "ПАУЗА  ·  DEBUG" : "ПАУЗА  ·  Shift+Num 0: debug");
+
+        if (Debug.isDebugBuild)
+        {
+            int errorCount = DevelopmentLogBuffer.ErrorCount;
+            string logButtonLabel = _showRuntimeLog ? "СКРЫТЬ ЖУРНАЛ" : $"ЖУРНАЛ ({errorCount})";
+            if (GUI.Button(new Rect(Screen.width - 176f, 20f, 160f, 34f), logButtonLabel))
+            {
+                _showRuntimeLog = !_showRuntimeLog;
+                _scrollRuntimeLogToBottom = _showRuntimeLog;
+            }
+
+            if (_showRuntimeLog)
+            {
+                DrawRuntimeLogPanel();
+                return;
+            }
+        }
+
         if (_debugEnabled == false)
         {
             return;
@@ -110,6 +135,69 @@ public class DebugAdminPanel : MonoBehaviour
         if (_showSpecialCards)
         {
             DrawSpecialCardsPanel(progression);
+        }
+    }
+
+    private void DrawRuntimeLogPanel()
+    {
+        if (_observedRuntimeLogVersion != DevelopmentLogBuffer.Version)
+        {
+            _observedRuntimeLogVersion = DevelopmentLogBuffer.Version;
+            _scrollRuntimeLogToBottom = true;
+        }
+
+        Rect panel = new(16f, 62f, Screen.width - 32f, Screen.height - 78f);
+        GUI.Box(panel, "DEVELOPMENT LOG");
+
+        float buttonY = panel.y + 26f;
+        if (GUI.Button(new Rect(panel.x + 12f, buttonY, 150f, 26f), "КОПИРОВАТЬ ВСЁ"))
+        {
+            GUIUtility.systemCopyBuffer = DevelopmentLogBuffer.BuildText();
+        }
+
+        if (GUI.Button(new Rect(panel.x + 170f, buttonY, 120f, 26f), "ОЧИСТИТЬ"))
+        {
+            DevelopmentLogBuffer.Clear();
+            _runtimeLogScroll = Vector2.zero;
+        }
+
+        if (GUI.Button(new Rect(panel.xMax - 132f, buttonY, 120f, 26f), "ЗАКРЫТЬ"))
+        {
+            _showRuntimeLog = false;
+            return;
+        }
+
+        string logText = DevelopmentLogBuffer.BuildText();
+        if (string.IsNullOrEmpty(logText))
+        {
+            logText = "Журнал пуст.";
+        }
+
+        _runtimeLogStyle ??= new GUIStyle(GUI.skin.textArea)
+        {
+            fontSize = 12,
+            wordWrap = false
+        };
+        RuntimeGuiPresentation.ApplyFont(_runtimeLogStyle);
+
+        Rect viewport = new(panel.x + 12f, buttonY + 34f, panel.width - 24f, panel.height - 72f);
+        float contentWidth = Mathf.Max(viewport.width - 20f, 1400f);
+        int lineCount = 1;
+        foreach (char character in logText)
+        {
+            if (character == '\n') lineCount++;
+        }
+        float contentHeight = Mathf.Max(viewport.height - 20f, lineCount * 18f + 12f);
+        Rect content = new(0f, 0f, contentWidth, contentHeight);
+
+        _runtimeLogScroll = GUI.BeginScrollView(viewport, _runtimeLogScroll, content);
+        GUI.TextArea(new Rect(0f, 0f, contentWidth, contentHeight), logText, _runtimeLogStyle);
+        GUI.EndScrollView();
+
+        if (_scrollRuntimeLogToBottom)
+        {
+            _runtimeLogScroll.y = contentHeight;
+            _scrollRuntimeLogToBottom = false;
         }
     }
 
@@ -210,5 +298,128 @@ public class DebugAdminPanel : MonoBehaviour
     private void OnDestroy()
     {
         if (_paused) Time.timeScale = 1f;
+    }
+
+}
+
+internal static class DevelopmentLogBuffer
+{
+    private const int MaxEntries = 64;
+    private static readonly List<Entry> Entries = new();
+    private static readonly object SyncRoot = new();
+    private static readonly System.Diagnostics.Stopwatch RuntimeClock = System.Diagnostics.Stopwatch.StartNew();
+    private static int _version;
+
+    public static int Version => System.Threading.Volatile.Read(ref _version);
+
+    public static int ErrorCount
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                int count = 0;
+                foreach (Entry entry in Entries)
+                {
+                    if (entry.Type is LogType.Error or LogType.Assert or LogType.Exception)
+                    {
+                        count += entry.RepeatCount;
+                    }
+                }
+                return count;
+            }
+        }
+    }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void Initialize()
+    {
+        lock (SyncRoot)
+        {
+            Entries.Clear();
+            RuntimeClock.Restart();
+            _version = 0;
+        }
+
+        Application.logMessageReceived -= HandleLog;
+        Application.logMessageReceivedThreaded -= HandleLog;
+        if (Debug.isDebugBuild)
+        {
+            Application.logMessageReceivedThreaded += HandleLog;
+        }
+    }
+
+    public static void Clear()
+    {
+        lock (SyncRoot)
+        {
+            Entries.Clear();
+            _version++;
+        }
+    }
+
+    public static string BuildText()
+    {
+        lock (SyncRoot)
+        {
+            StringBuilder builder = new();
+            foreach (Entry entry in Entries)
+            {
+                builder.Append('[')
+                    .Append(entry.StartedAt.ToString("F2"))
+                    .Append("] [")
+                    .Append(entry.Type)
+                    .Append(']');
+                if (entry.RepeatCount > 1)
+                {
+                    builder.Append(" x").Append(entry.RepeatCount);
+                }
+                builder.AppendLine().AppendLine(entry.Text).AppendLine();
+            }
+            return builder.ToString();
+        }
+    }
+
+    private static void HandleLog(string condition, string stackTrace, LogType type)
+    {
+        string text = string.IsNullOrWhiteSpace(stackTrace)
+            ? condition
+            : $"{condition}\n{stackTrace}";
+
+        lock (SyncRoot)
+        {
+            if (Entries.Count > 0)
+            {
+                Entry lastEntry = Entries[Entries.Count - 1];
+                if (lastEntry.Type == type && lastEntry.Text == text)
+                {
+                    lastEntry.RepeatCount++;
+                    _version++;
+                    return;
+                }
+            }
+
+            Entries.Add(new Entry
+            {
+                Type = type,
+                Text = text,
+                StartedAt = (float)RuntimeClock.Elapsed.TotalSeconds,
+                RepeatCount = 1
+            });
+
+            if (Entries.Count > MaxEntries)
+            {
+                Entries.RemoveAt(0);
+            }
+            _version++;
+        }
+    }
+
+    private sealed class Entry
+    {
+        public LogType Type;
+        public string Text;
+        public float StartedAt;
+        public int RepeatCount;
     }
 }

@@ -121,8 +121,10 @@ namespace Assets.Scripts.Ecs
 
         private void CreateMachineGunProjectile(EntityCommandBuffer commandBuffer, float3 origin, float3 direction, PlayerProgressionState progression, int damage)
         {
+            float4 tracerColor = GetMachineGunTracerColor(progression);
+            float3 projectileOrigin = origin + direction * 0.6f;
             Entity projectile = commandBuffer.CreateEntity();
-            commandBuffer.AddComponent(projectile, LocalTransform.FromPosition(origin + direction * 0.6f));
+            commandBuffer.AddComponent(projectile, LocalTransform.FromPosition(projectileOrigin));
             commandBuffer.AddComponent(projectile, new ProjectileComponent
             {
                 Direction = direction,
@@ -135,10 +137,33 @@ namespace Assets.Scripts.Ecs
                 ChainLightningRemaining = progression.MachineGunChainLightning ? 2 : 0,
                 ElectricStormRadius = progression.MachineGunElectricStorm ? 2.5f : 0f,
                 ElectricStormDamageMultiplier = progression.MachineGunElectricStorm ? 0.5f : 0f,
-                Color = new float4(1f, 0.9f, 0.2f, 1f),
+                Color = tracerColor,
                 VisualScale = 0.1f
             });
             commandBuffer.AddBuffer<ProjectileHit>(projectile);
+
+            Entity tracer = commandBuffer.CreateEntity();
+            commandBuffer.AddComponent(tracer, new TracerEvent
+            {
+                Start = projectileOrigin,
+                End = projectileOrigin + direction * CombatBalance.MachineGunRange,
+                Color = tracerColor
+            });
+        }
+
+        private static float4 GetMachineGunTracerColor(PlayerProgressionState progression)
+        {
+            if (progression.MachineGunElectricStorm)
+            {
+                return CombatPresentationColors.ElectricStormTracer;
+            }
+
+            if (progression.MachineGunChainLightning)
+            {
+                return CombatPresentationColors.ChainLightningTracer;
+            }
+
+            return CombatPresentationColors.MachineGunTracer;
         }
 
         private void CreateDamageRequest(EntityCommandBuffer commandBuffer, Entity target, int amount)

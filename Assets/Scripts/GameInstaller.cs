@@ -89,6 +89,7 @@ public class GameInstaller : MonoBehaviour
         DestroyEntitiesWith<ExperiencePickupComponent>();
         DestroyEntitiesWith<DamageRequest>();
         DestroyEntitiesWith<TracerEvent>();
+        DestroyEntitiesWith<DamageNumberEvent>();
     }
 
     private void CreatePlayer()

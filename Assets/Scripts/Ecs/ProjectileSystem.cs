@@ -66,7 +66,7 @@ namespace Assets.Scripts.Ecs
                     if (projectile.ValueRO.ElectricStormRadius > 0f)
                     {
                         int stormDamage = math.max(1, (int)math.ceil(damage * projectile.ValueRO.ElectricStormDamageMultiplier));
-                        CreateAreaDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ElectricStormRadius, stormDamage);
+                        CreateAreaDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ElectricStormRadius, stormDamage, true);
                     }
                     hits.Add(new ProjectileHit { Target = target });
 
@@ -160,13 +160,17 @@ namespace Assets.Scripts.Ecs
             return false;
         }
 
-        private void CreateAreaDamage(ref SystemState state, EntityCommandBuffer commandBuffer, Entity directTarget, float3 center, float radius, int damage)
+        private void CreateAreaDamage(ref SystemState state, EntityCommandBuffer commandBuffer, Entity directTarget, float3 center, float radius, int damage, bool showElectricStormTracer = false)
         {
             foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
             {
                 if (enemy != directTarget && math.distancesq(enemyTransform.ValueRO.Position, center) <= radius * radius)
                 {
                     CreateDamageRequest(commandBuffer, enemy, damage);
+                    if (showElectricStormTracer)
+                    {
+                        CreateTracerEvent(commandBuffer, center, enemyTransform.ValueRO.Position, CombatPresentationColors.ElectricStormTracer);
+                    }
                 }
             }
         }
@@ -180,9 +184,21 @@ namespace Assets.Scripts.Ecs
                 if (enemy != directTarget && math.distancesq(enemyTransform.ValueRO.Position, center) <= 4f * 4f)
                 {
                     CreateDamageRequest(commandBuffer, enemy, damage);
+                    CreateTracerEvent(commandBuffer, center, enemyTransform.ValueRO.Position, CombatPresentationColors.ChainLightningTracer);
                     remaining--;
                 }
             }
+        }
+
+        private void CreateTracerEvent(EntityCommandBuffer commandBuffer, float3 start, float3 end, float4 color)
+        {
+            Entity tracer = commandBuffer.CreateEntity();
+            commandBuffer.AddComponent(tracer, new TracerEvent
+            {
+                Start = start,
+                End = end,
+                Color = color
+            });
         }
 
         private bool TryFindClosestEnemy(ref SystemState state, float3 origin, DynamicBuffer<ProjectileHit> hits, out Entity result)
@@ -216,7 +232,12 @@ namespace Assets.Scripts.Ecs
     {
         public void OnUpdate(ref SystemState state)
         {
-            Entity player = SystemAPI.GetSingletonEntity<PlayerTag>();
+            if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out Entity player) ||
+                !SystemAPI.HasComponent<LocalTransform>(player))
+            {
+                return;
+            }
+
             EntityCommandBuffer commandBuffer = new(Allocator.Temp);
             float deltaTime = SystemAPI.Time.DeltaTime;
 

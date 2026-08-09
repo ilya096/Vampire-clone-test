@@ -125,6 +125,7 @@ public class PlayerProgressionController : MonoBehaviour
             return;
         }
 
+        RuntimeGuiPresentation.ApplyFontToCurrentSkin();
         DrawExperienceProgress();
 
         if (_choiceOpen == false)
@@ -179,6 +180,7 @@ public class PlayerProgressionController : MonoBehaviour
                 fontSize = 14,
                 fontStyle = FontStyle.Bold
             };
+            RuntimeGuiPresentation.ApplyFont(_experienceBarLabelStyle);
             _experienceBarLabelStyle.normal.textColor = Color.white;
         }
 

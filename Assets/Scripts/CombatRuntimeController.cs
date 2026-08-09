@@ -6,6 +6,7 @@ using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 public class CombatRuntimeController : MonoBehaviour
@@ -13,6 +14,7 @@ public class CombatRuntimeController : MonoBehaviour
     private readonly Dictionary<Entity, GameObject> _projectileViews = new();
     private readonly Dictionary<Entity, GameObject> _pickupViews = new();
     private readonly Dictionary<Entity, RangedProjectilePresentation> _rangedProjectileViews = new();
+    private readonly List<DamageNumberPresentation> _damageNumbers = new();
 
     private World _world;
     private EntityManager _entityManager;
@@ -21,9 +23,15 @@ public class CombatRuntimeController : MonoBehaviour
     private EntityQuery _pickupQuery;
     private EntityQuery _tracerQuery;
     private EntityQuery _rangedProjectileQuery;
+    private EntityQuery _damageNumberQuery;
     private CombatHudView _hud;
     private Transform _playerVisual;
     private float _defeatUntil = -1f;
+    private int _damageNumberSequence;
+    private GUIStyle _damageNumberStyle;
+    private GUIStyle _damageNumberShadowStyle;
+
+    private const float DamageNumberDuration = 0.9f;
 
     public void Initialize(World world, Entity playerEntity, Transform playerVisual)
     {
@@ -35,6 +43,7 @@ public class CombatRuntimeController : MonoBehaviour
         _pickupQuery = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<ExperiencePickupComponent>(), ComponentType.ReadOnly<LocalTransform>());
         _tracerQuery = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<TracerEvent>());
         _rangedProjectileQuery = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<RangedProjectileComponent>(), ComponentType.ReadOnly<LocalTransform>());
+        _damageNumberQuery = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<DamageNumberEvent>());
         _hud = FindAnyObjectByType<CombatHudView>();
         _hud?.ShowDefeat(false);
     }
@@ -60,6 +69,7 @@ public class CombatRuntimeController : MonoBehaviour
         PresentProjectiles();
         PresentExperiencePickups();
         PresentTracers();
+        PresentDamageNumbers();
         PresentRangedProjectiles();
         RefreshHudAndCheckDefeat();
     }
@@ -171,19 +181,39 @@ public class CombatRuntimeController : MonoBehaviour
         {
             TracerEvent tracer = _entityManager.GetComponentData<TracerEvent>(entity);
             GameObject lineObject = new("CombatTracer");
-            LineRenderer line = lineObject.AddComponent<LineRenderer>();
-            line.positionCount = 2;
-            line.SetPosition(0, new Vector3(tracer.Start.x, tracer.Start.y + 0.35f, tracer.Start.z));
-            line.SetPosition(1, new Vector3(tracer.End.x, tracer.End.y + 0.35f, tracer.End.z));
-            line.startWidth = 0.035f;
-            line.endWidth = 0.015f;
-            line.startColor = new Color(tracer.Color.x, tracer.Color.y, tracer.Color.z, tracer.Color.w);
-            line.endColor = line.startColor;
-            Destroy(lineObject, 0.06f);
+            Vector3 start = new(tracer.Start.x, tracer.Start.y + 0.45f, tracer.Start.z);
+            Vector3 end = new(tracer.End.x, tracer.End.y + 0.45f, tracer.End.z);
+            Color color = new(tracer.Color.x, tracer.Color.y, tracer.Color.z, tracer.Color.w);
+            ConfigureTracerLine(CreateTracerLayer(lineObject.transform, "Glow"), start, end, color, 0.09f, 0.035f, 0.28f);
+            ConfigureTracerLine(CreateTracerLayer(lineObject.transform, "Core"), start, end, Color.Lerp(color, Color.white, 0.35f), 0.035f, 0.01f, 1f);
+            Destroy(lineObject, 0.08f);
             _entityManager.DestroyEntity(entity);
         }
 
         entities.Dispose();
+    }
+
+    private static LineRenderer CreateTracerLayer(Transform parent, string name)
+    {
+        GameObject layer = new(name);
+        layer.transform.SetParent(parent, false);
+        LineRenderer line = layer.AddComponent<LineRenderer>();
+        RuntimeRendererUtility.ConfigureLine(line);
+        return line;
+    }
+
+    private static void ConfigureTracerLine(LineRenderer line, Vector3 start, Vector3 end, Color color, float startWidth, float endWidth, float alphaMultiplier)
+    {
+        line.positionCount = 2;
+        line.SetPosition(0, start);
+        line.SetPosition(1, end);
+        line.startWidth = startWidth;
+        line.endWidth = endWidth;
+        line.numCapVertices = 2;
+        line.numCornerVertices = 2;
+        color.a *= alphaMultiplier;
+        line.startColor = color;
+        line.endColor = color;
     }
 
     private void PresentRangedProjectiles()
@@ -217,13 +247,94 @@ public class CombatRuntimeController : MonoBehaviour
         CleanRangedProjectileViews();
     }
 
+    private void PresentDamageNumbers()
+    {
+        NativeArray<Entity> entities = _damageNumberQuery.ToEntityArray(Allocator.Temp);
+        foreach (Entity entity in entities)
+        {
+            DamageNumberEvent damageNumber = _entityManager.GetComponentData<DamageNumberEvent>(entity);
+            int lane = _damageNumberSequence++ % 3 - 1;
+            _damageNumbers.Add(new DamageNumberPresentation
+            {
+                Position = new Vector3(damageNumber.Position.x, damageNumber.Position.y, damageNumber.Position.z) + Vector3.up * 1.5f,
+                Amount = damageNumber.Amount,
+                StartedAt = Time.unscaledTime,
+                HorizontalOffset = lane * 14f
+            });
+            _entityManager.DestroyEntity(entity);
+        }
+
+        entities.Dispose();
+
+        float now = Time.unscaledTime;
+        for (int index = _damageNumbers.Count - 1; index >= 0; index--)
+        {
+            if (now - _damageNumbers[index].StartedAt >= DamageNumberDuration)
+            {
+                _damageNumbers.RemoveAt(index);
+            }
+        }
+    }
+
+    private void OnGUI()
+    {
+        if (_damageNumbers.Count == 0)
+        {
+            return;
+        }
+
+        RuntimeGuiPresentation.ApplyFontToCurrentSkin();
+        Camera camera = Camera.main;
+        if (camera == null)
+        {
+            return;
+        }
+
+        _damageNumberStyle ??= new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 26,
+            fontStyle = FontStyle.Bold
+        };
+        RuntimeGuiPresentation.ApplyFont(_damageNumberStyle);
+        _damageNumberShadowStyle ??= new GUIStyle(_damageNumberStyle);
+
+        float now = Time.unscaledTime;
+        foreach (DamageNumberPresentation damageNumber in _damageNumbers)
+        {
+            float age = now - damageNumber.StartedAt;
+            if (age < 0f || age >= DamageNumberDuration)
+            {
+                continue;
+            }
+
+            Vector3 screenPosition = camera.WorldToScreenPoint(damageNumber.Position);
+            if (screenPosition.z <= 0f)
+            {
+                continue;
+            }
+
+            float progress = age / DamageNumberDuration;
+            float alpha = 1f - Mathf.SmoothStep(0f, 1f, progress);
+            float x = screenPosition.x + damageNumber.HorizontalOffset - 45f;
+            float y = Screen.height - screenPosition.y - 25f - progress * 55f;
+            Rect labelRect = new(x, y, 90f, 40f);
+            string label = damageNumber.Amount.ToString();
+
+            _damageNumberShadowStyle.normal.textColor = new Color(0f, 0f, 0f, alpha * 0.9f);
+            GUI.Label(new Rect(labelRect.x + 2f, labelRect.y + 2f, labelRect.width, labelRect.height), label, _damageNumberShadowStyle);
+            _damageNumberStyle.normal.textColor = new Color(1f, 0.82f, 0.16f, alpha);
+            GUI.Label(labelRect, label, _damageNumberStyle);
+        }
+    }
+
     private GameObject CreateMarker(PrimitiveType type, Color color, float scale)
     {
         GameObject marker = GameObject.CreatePrimitive(type);
         marker.name = "CombatRuntimeMarker";
         marker.transform.localScale = Vector3.one * scale;
         Destroy(marker.GetComponent<Collider>());
-        marker.GetComponent<Renderer>().material.color = color;
+        RuntimeRendererUtility.ConfigureMesh(marker.GetComponent<Renderer>(), color);
         return marker;
     }
 
@@ -307,5 +418,66 @@ public class CombatRuntimeController : MonoBehaviour
         public GameObject Projectile;
         public GameObject Marker;
         public GameObject Shadow;
+    }
+
+    private sealed class DamageNumberPresentation
+    {
+        public Vector3 Position;
+        public int Amount;
+        public float StartedAt;
+        public float HorizontalOffset;
+    }
+}
+
+internal static class RuntimeRendererUtility
+{
+    private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
+    private static readonly int ColorProperty = Shader.PropertyToID("_Color");
+
+    public static void ConfigureMesh(Renderer renderer, Color color)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
+        Material material = color.a < 0.999f
+            ? pipeline?.defaultParticleMaterial
+            : pipeline?.defaultMaterial;
+        if (material != null)
+        {
+            renderer.sharedMaterial = material;
+        }
+
+        SetColor(renderer, color);
+    }
+
+    public static void ConfigureLine(LineRenderer line)
+    {
+        if (line == null)
+        {
+            return;
+        }
+
+        Material material = GraphicsSettings.currentRenderPipeline?.defaultLineMaterial;
+        if (material != null)
+        {
+            line.sharedMaterial = material;
+        }
+    }
+
+    public static void SetColor(Renderer renderer, Color color)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        MaterialPropertyBlock properties = new();
+        renderer.GetPropertyBlock(properties);
+        properties.SetColor(BaseColorProperty, color);
+        properties.SetColor(ColorProperty, color);
+        renderer.SetPropertyBlock(properties);
     }
 }

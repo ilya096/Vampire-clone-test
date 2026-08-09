@@ -159,7 +159,7 @@ public class WaveRuntimeController : MonoBehaviour
                 SetSpawning(false, 0f, 0);
                 if (_gate != null)
                 {
-                    _gate.GetComponent<Renderer>().material.color = new Color(0.25f, 1f, 0.35f);
+                    RuntimeRendererUtility.SetColor(_gate.GetComponent<Renderer>(), new Color(0.25f, 1f, 0.35f));
                 }
                 break;
         }
@@ -217,14 +217,14 @@ public class WaveRuntimeController : MonoBehaviour
         _cart.transform.position = _cartStart + Vector3.up * 0.35f;
         _cart.transform.localScale = new Vector3(1.4f, 0.7f, 1f);
         Destroy(_cart.GetComponent<Collider>());
-        _cart.GetComponent<Renderer>().material.color = new Color(1f, 0.7f, 0.15f);
+        RuntimeRendererUtility.ConfigureMesh(_cart.GetComponent<Renderer>(), new Color(1f, 0.7f, 0.15f));
 
         _gate = GameObject.CreatePrimitive(PrimitiveType.Cube);
         _gate.name = "FirstLetterPExitGate";
         _gate.transform.position = _cartEnd + Vector3.up * 1f;
         _gate.transform.localScale = new Vector3(3.2f, 2f, 0.25f);
         Destroy(_gate.GetComponent<Collider>());
-        _gate.GetComponent<Renderer>().material.color = new Color(0.9f, 0.2f, 0.2f);
+        RuntimeRendererUtility.ConfigureMesh(_gate.GetComponent<Renderer>(), new Color(0.9f, 0.2f, 0.2f));
     }
 
     private void UpdateEscort()
@@ -288,6 +288,7 @@ public class WaveRuntimeController : MonoBehaviour
             return;
         }
 
+        RuntimeGuiPresentation.ApplyFontToCurrentSkin();
         string text = Phase == FirstArenaPhase.Escort
             ? $"ЭСКОРТ ВАГОНЕТКИ  {EscortProgress:P0}"
             : $"{GetPhaseLabel(Phase)}  {Mathf.CeilToInt(PhaseRemainingSeconds)} c";
