@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('setup-player-combat', 'open')]
+    [ValidateSet('setup-player-combat', 'setup-arena-zoning', 'validate-arena-zoning', 'open')]
     [string]$Task = 'setup-player-combat'
 )
 
@@ -18,12 +18,22 @@ if ($Task -eq 'open') {
     return
 }
 
-$logPath = Join-Path $projectRoot 'Logs\player-combat-unity-batch.log'
+$executeMethod = switch ($Task) {
+    'setup-arena-zoning' { 'ArenaRouteSceneSetup.SetupArenaRoute' }
+    'validate-arena-zoning' { 'ArenaRouteSceneSetup.ValidateArenaRoute' }
+    default { 'PlayerCombatSceneSetup.SetupPlayerCombatInGame' }
+}
+$logName = switch ($Task) {
+    'setup-arena-zoning' { 'arena-zoning-unity-batch.log' }
+    'validate-arena-zoning' { 'arena-zoning-validation.log' }
+    default { 'player-combat-unity-batch.log' }
+}
+$logPath = Join-Path $projectRoot "Logs\$logName"
 $process = Start-Process -FilePath $unityEditor -ArgumentList @(
     '-batchmode',
     '-quit',
     '-projectPath', $projectRoot,
-    '-executeMethod', 'PlayerCombatSceneSetup.SetupPlayerCombatInGame',
+    '-executeMethod', $executeMethod,
     '-logFile', $logPath
 ) -Wait -PassThru
 $exitCode = $process.ExitCode
@@ -32,4 +42,4 @@ if ($exitCode -ne 0) {
     throw "Unity setup failed with exit code $exitCode. See $logPath."
 }
 
-Write-Host "Unity player combat setup completed. Log: $logPath"
+Write-Host "Unity $Task completed. Log: $logPath"

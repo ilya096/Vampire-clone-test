@@ -4,11 +4,12 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.AI;
+using System;
 using System.Collections.Generic;
 
 /// <summary>
 /// Runs the validated first-arena vertical slice: preparation, two fixed waves,
-/// then the cart escort that opens the gate. The values are intentionally local
+/// then the cart escort that unlocks the P -> R route gate. The values are intentionally local
 /// defaults and are exposed for the later debug panel and balance pass.
 /// </summary>
 public class WaveRuntimeController : MonoBehaviour
@@ -51,7 +52,6 @@ public class WaveRuntimeController : MonoBehaviour
     private Transform _playerVisual;
     private EscortRoute _escortRoute;
     private GameObject _cart;
-    private GameObject _gate;
     private Vector3 _cartStart;
     private Vector3 _cartEnd;
     private readonly List<Vector3> _escortPoints = new();
@@ -59,6 +59,7 @@ public class WaveRuntimeController : MonoBehaviour
     private float _escortDistanceTravelled;
     private float _phaseRemaining;
     private bool _initialized;
+    private bool _completionRaised;
 
     public FirstArenaPhase Phase { get; private set; }
     public float FirstWaveSeconds { get => _firstWaveSeconds; set => _firstWaveSeconds = Mathf.Max(1f, value); }
@@ -73,6 +74,7 @@ public class WaveRuntimeController : MonoBehaviour
     public float EscortProgress => _cart == null || _escortPathLength <= 0f
         ? 0f
         : Mathf.Clamp01(_escortDistanceTravelled / _escortPathLength);
+    public event Action FirstArenaCompleted;
 
     public void Initialize(World world, Entity playerEntity, Transform playerVisual)
     {
@@ -83,6 +85,7 @@ public class WaveRuntimeController : MonoBehaviour
         _escortRoute = FindAnyObjectByType<EscortRoute>();
         _spawnConfigQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnConfigComponent>());
         _spawnStateQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnStateComponent>());
+        _completionRaised = false;
         _initialized = true;
         EnterPhase(FirstArenaPhase.Preparation);
     }
@@ -157,9 +160,10 @@ public class WaveRuntimeController : MonoBehaviour
             case FirstArenaPhase.Complete:
                 _phaseRemaining = 0f;
                 SetSpawning(false, 0f, 0);
-                if (_gate != null)
+                if (_completionRaised == false)
                 {
-                    RuntimeRendererUtility.SetColor(_gate.GetComponent<Renderer>(), new Color(0.25f, 1f, 0.35f));
+                    _completionRaised = true;
+                    FirstArenaCompleted?.Invoke();
                 }
                 break;
         }
@@ -219,12 +223,6 @@ public class WaveRuntimeController : MonoBehaviour
         Destroy(_cart.GetComponent<Collider>());
         RuntimeRendererUtility.ConfigureMesh(_cart.GetComponent<Renderer>(), new Color(1f, 0.7f, 0.15f));
 
-        _gate = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        _gate.name = "FirstLetterPExitGate";
-        _gate.transform.position = _cartEnd + Vector3.up * 1f;
-        _gate.transform.localScale = new Vector3(3.2f, 2f, 0.25f);
-        Destroy(_gate.GetComponent<Collider>());
-        RuntimeRendererUtility.ConfigureMesh(_gate.GetComponent<Renderer>(), new Color(0.9f, 0.2f, 0.2f));
     }
 
     private void UpdateEscort()
@@ -310,6 +308,5 @@ public class WaveRuntimeController : MonoBehaviour
     private void OnDestroy()
     {
         if (_cart != null) Destroy(_cart);
-        if (_gate != null) Destroy(_gate);
     }
 }
