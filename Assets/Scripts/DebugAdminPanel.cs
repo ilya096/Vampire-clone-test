@@ -14,6 +14,7 @@ public class DebugAdminPanel : MonoBehaviour
     private EntityManager _entityManager;
     private Entity _player;
     private WaveRuntimeController _waves;
+    private MultiArenaWaveController _multiArenaWaves;
     private ArenaRouteController _arenaRoute;
     private bool _paused;
     private bool _debugEnabled;
@@ -40,6 +41,7 @@ public class DebugAdminPanel : MonoBehaviour
         _entityManager = world.EntityManager;
         _player = player;
         _waves = GetComponent<WaveRuntimeController>();
+        _multiArenaWaves = GetComponent<MultiArenaWaveController>();
         _arenaRoute = GetComponent<ArenaRouteController>();
         CaptureInitialValues();
     }
@@ -120,7 +122,7 @@ public class DebugAdminPanel : MonoBehaviour
         DrawOpaquePanel(panel, "DEBUG ADMIN PANEL");
 
         Rect viewport = new(panel.x + 8f, panel.y + 28f, panel.width - 16f, panel.height - 36f);
-        Rect content = new(0f, 0f, 380f, 585f);
+        Rect content = new(0f, 0f, 380f, 690f);
         _debugPanelScroll = GUI.BeginScrollView(viewport, _debugPanelScroll, content, false, true);
 
         float x = 0f;
@@ -148,11 +150,28 @@ public class DebugAdminPanel : MonoBehaviour
             GUI.Label(new Rect(x + 12f, y, 350f, 20f), "Волны и вагонетка"); y += 22f;
             if (_waves != null)
             {
-                _waves.FirstWaveSeconds = DrawValue(x, y, "Wave 1 sec", _waves.FirstWaveSeconds, 5f, 90f); y += 25f;
-                _waves.SecondWaveSeconds = DrawValue(x, y, "Wave 2 sec", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
+                _waves.FirstWaveSeconds = DrawValue(x, y, "Wave 1 sec (all)", _waves.FirstWaveSeconds, 5f, 90f); y += 25f;
+                _waves.SecondWaveSeconds = DrawValue(x, y, "Wave 2 sec (all)", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
                 _waves.EscortSpeed = DrawValue(x, y, "Cart speed", _waves.EscortSpeed, 0.1f, 8f); y += 25f;
                 _waves.EscortPlayerRadius = DrawValue(x, y, "Cart radius", _waves.EscortPlayerRadius, 0.5f, 10f); y += 28f;
                 if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Сброс волн/вагонетки")) { ResetWaves(); return; }
+                bool previousEnabled = GUI.enabled;
+                GUI.enabled = _waves.Phase != WaveRuntimeController.FirstArenaPhase.Complete;
+                if (GUI.Button(new Rect(x + 195f, y, 177f, 24f), "Следующий этап П")) _waves.AdvanceCurrentPhaseForDebug();
+                GUI.enabled = previousEnabled;
+                y += 32f;
+            }
+
+            if (_multiArenaWaves != null)
+            {
+                string activeArena = _multiArenaWaves.Phase == MultiArenaWaveController.ArenaWavePhase.Inactive
+                    ? "—"
+                    : _multiArenaWaves.ActiveArena.ToString();
+                GUI.Label(new Rect(x + 12f, y, 350f, 20f), $"Арена Р/О: {activeArena} · {_multiArenaWaves.Phase}"); y += 22f;
+                bool previousEnabled = GUI.enabled;
+                GUI.enabled = _multiArenaWaves.IsSequenceRunning;
+                if (GUI.Button(new Rect(x + 12f, y, 360f, 24f), "Следующий этап волн Р/О")) _multiArenaWaves.AdvanceCurrentPhaseForDebug();
+                GUI.enabled = previousEnabled;
                 y += 32f;
             }
 
@@ -161,9 +180,10 @@ public class DebugAdminPanel : MonoBehaviour
             {
                 GUI.Label(new Rect(x + 12f, y, 350f, 20f), $"Route phase: {_arenaRoute.Phase}"); y += 22f;
                 bool previousEnabled = GUI.enabled;
-                GUI.enabled = _arenaRoute.Phase == ArenaRouteController.RoutePhase.WaitingForRWaves;
+                bool secondaryWavesRunning = _multiArenaWaves != null && _multiArenaWaves.IsSequenceRunning;
+                GUI.enabled = _arenaRoute.Phase == ArenaRouteController.RoutePhase.WaitingForRWaves && secondaryWavesRunning == false;
                 if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Начать захват Р")) _arenaRoute.BeginCaptureObjective();
-                GUI.enabled = _arenaRoute.Phase == ArenaRouteController.RoutePhase.WaitingForOWaves;
+                GUI.enabled = _arenaRoute.Phase == ArenaRouteController.RoutePhase.WaitingForOWaves && secondaryWavesRunning == false;
                 if (GUI.Button(new Rect(x + 195f, y, 177f, 24f), "Открыть центр О")) _arenaRoute.OpenBossArena();
                 GUI.enabled = previousEnabled;
             }

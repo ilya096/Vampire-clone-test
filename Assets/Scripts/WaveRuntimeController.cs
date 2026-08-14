@@ -62,8 +62,12 @@ public class WaveRuntimeController : MonoBehaviour
     private bool _completionRaised;
 
     public FirstArenaPhase Phase { get; private set; }
+    public float PreparationSeconds => _preparationSeconds;
     public float FirstWaveSeconds { get => _firstWaveSeconds; set => _firstWaveSeconds = Mathf.Max(1f, value); }
+    public int FirstWaveMaxEnemies => _firstWaveMaxEnemies;
     public float SecondWaveSeconds { get => _secondWaveSeconds; set => _secondWaveSeconds = Mathf.Max(1f, value); }
+    public int SecondWaveMaxEnemies => _secondWaveMaxEnemies;
+    public float IntermissionSeconds => _intermissionSeconds;
     public float FirstWaveSpawnInterval { get => _firstWaveSpawnInterval; set => _firstWaveSpawnInterval = Mathf.Max(0.05f, value); }
     public float SecondWaveSpawnInterval { get => _secondWaveSpawnInterval; set => _secondWaveSpawnInterval = Mathf.Max(0.05f, value); }
     public float EscortSpawnInterval { get => _escortSpawnInterval; set => _escortSpawnInterval = Mathf.Max(0.05f, value); }
@@ -75,6 +79,39 @@ public class WaveRuntimeController : MonoBehaviour
         ? 0f
         : Mathf.Clamp01(_escortDistanceTravelled / _escortPathLength);
     public event Action FirstArenaCompleted;
+
+    /// <summary>
+    /// Hidden acceptance helper used by DebugAdminPanel. It advances only the
+    /// current first-arena phase and never removes carry-over enemies.
+    /// </summary>
+    public bool AdvanceCurrentPhaseForDebug()
+    {
+        if (_initialized == false)
+        {
+            return false;
+        }
+
+        switch (Phase)
+        {
+            case FirstArenaPhase.Preparation:
+                EnterPhase(FirstArenaPhase.FirstWave);
+                return true;
+            case FirstArenaPhase.FirstWave:
+                EnterPhase(FirstArenaPhase.Intermission);
+                return true;
+            case FirstArenaPhase.Intermission:
+                EnterPhase(FirstArenaPhase.SecondWave);
+                return true;
+            case FirstArenaPhase.SecondWave:
+                EnterPhase(FirstArenaPhase.Escort);
+                return true;
+            case FirstArenaPhase.Escort:
+                EnterPhase(FirstArenaPhase.Complete);
+                return true;
+            default:
+                return false;
+        }
+    }
 
     public void Initialize(World world, Entity playerEntity, Transform playerVisual)
     {
