@@ -25,11 +25,13 @@ public class DebugAdminPanel : MonoBehaviour
     private float _initialEscortSpeed;
     private float _initialEscortRadius;
     private readonly Dictionary<string, string> _valueInputs = new();
+    private Vector2 _debugPanelScroll;
     private bool _showRuntimeLog;
     private Vector2 _runtimeLogScroll;
     private bool _scrollRuntimeLogToBottom;
     private GUIStyle _runtimeLogStyle;
     private int _observedRuntimeLogVersion;
+    private bool _controlErrorArmed;
 
     public void Initialize(World world, Entity player)
     {
@@ -71,6 +73,21 @@ public class DebugAdminPanel : MonoBehaviour
             return;
         }
 
+        int previousDepth = GUI.depth;
+        GUI.depth = -1000;
+        try
+        {
+            DrawPauseInterface();
+        }
+        finally
+        {
+            GUI.depth = previousDepth;
+        }
+    }
+
+    private void DrawPauseInterface()
+    {
+
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
         GUI.Box(new Rect(Screen.width * 0.5f - 160f, 20f, 320f, 34f), _debugEnabled ? "ПАУЗА  ·  DEBUG" : "ПАУЗА  ·  Shift+Num 0: debug");
 
@@ -96,41 +113,54 @@ public class DebugAdminPanel : MonoBehaviour
             return;
         }
 
-        Rect panel = new(16f, 70f, 390f, Screen.height - 90f);
-        GUI.Box(panel, "DEBUG ADMIN PANEL");
-        float y = panel.y + 30f;
+        float panelHeight = Mathf.Clamp(Screen.height - 86f, 220f, 560f);
+        Rect panel = new(16f, 70f, 402f, panelHeight);
+        DrawOpaquePanel(panel, "DEBUG ADMIN PANEL");
+
+        Rect viewport = new(panel.x + 8f, panel.y + 28f, panel.width - 16f, panel.height - 36f);
+        Rect content = new(0f, 0f, 380f, 505f);
+        _debugPanelScroll = GUI.BeginScrollView(viewport, _debugPanelScroll, content, false, true);
+
+        float x = 0f;
+        float y = 4f;
         GameplayTuningComponent tuning = GetTuning();
         PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_player);
         HealthComponent health = _entityManager.GetComponentData<HealthComponent>(_player);
-
-        GUI.Label(new Rect(panel.x + 12f, y, 350f, 20f), "Игрок и оружие"); y += 22f;
-        tuning.PistolDamage = Mathf.RoundToInt(DrawValue(panel.x, y, "Pistol damage", tuning.PistolDamage, 1f, 200f)); y += 25f;
-        tuning.MachineGunDamage = Mathf.RoundToInt(DrawValue(panel.x, y, "MG damage", tuning.MachineGunDamage, 1f, 100f)); y += 25f;
-        tuning.PlayerBaseSpeed = DrawValue(panel.x, y, "Move speed", tuning.PlayerBaseSpeed, 1f, 15f); y += 25f;
-        health.Value = Mathf.RoundToInt(DrawValue(panel.x, y, "Current HP", health.Value, 1f, health.MaxValue)); y += 28f;
-        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс игрока/оружия")) { ResetPlayerAndWeapons(); return; } y += 32f;
-
-        GUI.Label(new Rect(panel.x + 12f, y, 350f, 20f), "Прогрессия"); y += 22f;
-        tuning.ExperienceRadius = DrawValue(panel.x, y, "XP radius", tuning.ExperienceRadius, 0.5f, 12f); y += 25f;
-        progression.ExperienceValueMultiplier = DrawValue(panel.x, y, "XP value", progression.ExperienceValueMultiplier, 0.5f, 5f); y += 25f;
-        progression.NextLevelExperience = Mathf.RoundToInt(DrawValue(panel.x, y, "Next XP", progression.NextLevelExperience, 1f, 500f)); y += 28f;
-        if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс прогрессии")) { ResetProgression(); return; }
-        if (GUI.Button(new Rect(panel.x + 195f, y, 177f, 24f), _showSpecialCards ? "Скрыть special-карты" : "Special-карты...")) _showSpecialCards = !_showSpecialCards;
-        y += 32f;
-
-        GUI.Label(new Rect(panel.x + 12f, y, 350f, 20f), "Волны и вагонетка"); y += 22f;
-        if (_waves != null)
+        try
         {
-            _waves.FirstWaveSeconds = DrawValue(panel.x, y, "Wave 1 sec", _waves.FirstWaveSeconds, 5f, 90f); y += 25f;
-            _waves.SecondWaveSeconds = DrawValue(panel.x, y, "Wave 2 sec", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
-            _waves.EscortSpeed = DrawValue(panel.x, y, "Cart speed", _waves.EscortSpeed, 0.1f, 8f); y += 25f;
-            _waves.EscortPlayerRadius = DrawValue(panel.x, y, "Cart radius", _waves.EscortPlayerRadius, 0.5f, 10f); y += 28f;
-            if (GUI.Button(new Rect(panel.x + 12f, y, 170f, 24f), "Сброс волн/вагонетки")) { ResetWaves(); return; }
-        }
+            GUI.Label(new Rect(x + 12f, y, 350f, 20f), "Игрок и оружие"); y += 22f;
+            tuning.PistolDamage = Mathf.RoundToInt(DrawValue(x, y, "Pistol damage", tuning.PistolDamage, 1f, 200f)); y += 25f;
+            tuning.MachineGunDamage = Mathf.RoundToInt(DrawValue(x, y, "MG damage", tuning.MachineGunDamage, 1f, 100f)); y += 25f;
+            tuning.PlayerBaseSpeed = DrawValue(x, y, "Move speed", tuning.PlayerBaseSpeed, 1f, 15f); y += 25f;
+            health.Value = Mathf.RoundToInt(DrawValue(x, y, "Current HP", health.Value, 1f, health.MaxValue)); y += 28f;
+            if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Сброс игрока/оружия")) { ResetPlayerAndWeapons(); return; } y += 32f;
 
-        SetTuning(tuning);
-        _entityManager.SetComponentData(_player, progression);
-        _entityManager.SetComponentData(_player, health);
+            GUI.Label(new Rect(x + 12f, y, 350f, 20f), "Прогрессия"); y += 22f;
+            tuning.ExperienceRadius = DrawValue(x, y, "XP radius", tuning.ExperienceRadius, 0.5f, 12f); y += 25f;
+            progression.ExperienceValueMultiplier = DrawValue(x, y, "XP value", progression.ExperienceValueMultiplier, 0.5f, 5f); y += 25f;
+            progression.NextLevelExperience = Mathf.RoundToInt(DrawValue(x, y, "Next XP", progression.NextLevelExperience, 1f, 500f)); y += 28f;
+            if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Сброс прогрессии")) { ResetProgression(); return; }
+            if (GUI.Button(new Rect(x + 195f, y, 177f, 24f), _showSpecialCards ? "Скрыть special-карты" : "Special-карты...")) _showSpecialCards = !_showSpecialCards;
+            y += 32f;
+
+            GUI.Label(new Rect(x + 12f, y, 350f, 20f), "Волны и вагонетка"); y += 22f;
+            if (_waves != null)
+            {
+                _waves.FirstWaveSeconds = DrawValue(x, y, "Wave 1 sec", _waves.FirstWaveSeconds, 5f, 90f); y += 25f;
+                _waves.SecondWaveSeconds = DrawValue(x, y, "Wave 2 sec", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
+                _waves.EscortSpeed = DrawValue(x, y, "Cart speed", _waves.EscortSpeed, 0.1f, 8f); y += 25f;
+                _waves.EscortPlayerRadius = DrawValue(x, y, "Cart radius", _waves.EscortPlayerRadius, 0.5f, 10f); y += 28f;
+                if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Сброс волн/вагонетки")) { ResetWaves(); return; }
+            }
+
+            SetTuning(tuning);
+            _entityManager.SetComponentData(_player, progression);
+            _entityManager.SetComponentData(_player, health);
+        }
+        finally
+        {
+            GUI.EndScrollView();
+        }
 
         if (_showSpecialCards)
         {
@@ -147,7 +177,7 @@ public class DebugAdminPanel : MonoBehaviour
         }
 
         Rect panel = new(16f, 62f, Screen.width - 32f, Screen.height - 78f);
-        GUI.Box(panel, "DEVELOPMENT LOG");
+        DrawOpaquePanel(panel, "DEVELOPMENT LOG");
 
         float buttonY = panel.y + 26f;
         if (GUI.Button(new Rect(panel.x + 12f, buttonY, 150f, 26f), "КОПИРОВАТЬ ВСЁ"))
@@ -161,8 +191,23 @@ public class DebugAdminPanel : MonoBehaviour
             _runtimeLogScroll = Vector2.zero;
         }
 
+        string controlErrorLabel = _controlErrorArmed ? "ПОДТВЕРДИТЬ ERROR" : "КОНТРОЛЬНАЯ ОШИБКА";
+        if (GUI.Button(new Rect(panel.x + 298f, buttonY, 190f, 26f), controlErrorLabel))
+        {
+            if (_controlErrorArmed)
+            {
+                DevelopmentLogBuffer.EmitControlledError();
+                _controlErrorArmed = false;
+            }
+            else
+            {
+                _controlErrorArmed = true;
+            }
+        }
+
         if (GUI.Button(new Rect(panel.xMax - 132f, buttonY, 120f, 26f), "ЗАКРЫТЬ"))
         {
+            _controlErrorArmed = false;
             _showRuntimeLog = false;
             return;
         }
@@ -204,7 +249,7 @@ public class DebugAdminPanel : MonoBehaviour
     private void DrawSpecialCardsPanel(PlayerProgressionState progression)
     {
         Rect panel = new(418f, 70f, 370f, 330f);
-        GUI.Box(panel, "SPECIAL-КАРТЫ · прямое включение");
+        DrawOpaquePanel(panel, "SPECIAL-КАРТЫ · прямое включение");
         float y = panel.y + 30f;
 
         GUI.Label(new Rect(panel.x + 12f, y, 340f, 20f), "Пистолет"); y += 20f;
@@ -253,6 +298,15 @@ public class DebugAdminPanel : MonoBehaviour
         bool clicked = GUI.Button(rect, label);
         GUI.color = previousColor;
         return clicked;
+    }
+
+    private static void DrawOpaquePanel(Rect panel, string title)
+    {
+        Color previousColor = GUI.color;
+        GUI.color = new Color(0.035f, 0.045f, 0.055f, 0.96f);
+        GUI.DrawTexture(panel, Texture2D.whiteTexture);
+        GUI.color = previousColor;
+        GUI.Box(panel, title);
     }
 
     private float DrawValue(float x, float y, string label, float value, float min, float max)
@@ -304,6 +358,7 @@ public class DebugAdminPanel : MonoBehaviour
 
 internal static class DevelopmentLogBuffer
 {
+    internal const string ControlledErrorMarker = "[Logo Survivor][DevelopmentLog] CONTROL_THREADED_CAPTURE";
     private const int MaxEntries = 64;
     private static readonly List<Entry> Entries = new();
     private static readonly object SyncRoot = new();
@@ -355,6 +410,14 @@ internal static class DevelopmentLogBuffer
         {
             Entries.Clear();
             _version++;
+        }
+    }
+
+    public static void EmitControlledError()
+    {
+        if (Debug.isDebugBuild)
+        {
+            Debug.LogError(ControlledErrorMarker);
         }
     }
 

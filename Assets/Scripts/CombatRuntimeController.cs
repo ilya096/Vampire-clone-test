@@ -431,8 +431,23 @@ public class CombatRuntimeController : MonoBehaviour
 
 internal static class RuntimeRendererUtility
 {
+    private const string OpaqueMaterialResourcePath = "RuntimeMaterials/RuntimeOpaque";
+    private const string TransparentMaterialResourcePath = "RuntimeMaterials/RuntimeTransparent";
     private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorProperty = Shader.PropertyToID("_Color");
+    private static Material _opaqueMaterial;
+    private static Material _transparentMaterial;
+    private static bool _materialsLoaded;
+    private static bool _missingMaterialsReported;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetMaterialCache()
+    {
+        _opaqueMaterial = null;
+        _transparentMaterial = null;
+        _materialsLoaded = false;
+        _missingMaterialsReported = false;
+    }
 
     public static void ConfigureMesh(Renderer renderer, Color color)
     {
@@ -441,10 +456,8 @@ internal static class RuntimeRendererUtility
             return;
         }
 
-        RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
-        Material material = color.a < 0.999f
-            ? pipeline?.defaultParticleMaterial
-            : pipeline?.defaultMaterial;
+        bool transparent = color.a < 0.999f;
+        Material material = GetRuntimeMaterial(transparent);
         if (material != null)
         {
             renderer.sharedMaterial = material;
@@ -460,11 +473,36 @@ internal static class RuntimeRendererUtility
             return;
         }
 
-        Material material = GraphicsSettings.currentRenderPipeline?.defaultLineMaterial;
+        Material material = GetRuntimeMaterial(transparent: true);
         if (material != null)
         {
             line.sharedMaterial = material;
         }
+    }
+
+    private static Material GetRuntimeMaterial(bool transparent)
+    {
+        if (_materialsLoaded == false)
+        {
+            _opaqueMaterial = Resources.Load<Material>(OpaqueMaterialResourcePath);
+            _transparentMaterial = Resources.Load<Material>(TransparentMaterialResourcePath);
+            _materialsLoaded = true;
+        }
+
+        Material material = transparent ? _transparentMaterial : _opaqueMaterial;
+        if (material != null)
+        {
+            return material;
+        }
+
+        if (_missingMaterialsReported == false)
+        {
+            _missingMaterialsReported = true;
+            Debug.LogError($"Runtime renderer materials are missing from Resources/{OpaqueMaterialResourcePath} or Resources/{TransparentMaterialResourcePath}.");
+        }
+
+        RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
+        return transparent ? pipeline?.defaultParticleMaterial : pipeline?.defaultMaterial;
     }
 
     public static void SetColor(Renderer renderer, Color color)
