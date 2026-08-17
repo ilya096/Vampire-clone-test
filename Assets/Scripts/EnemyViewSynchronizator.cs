@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using Assets.Scripts.Ecs;
@@ -37,7 +38,14 @@ namespace Assets.Scripts
             if(_pool.TryPop(out GameObject view))
             {
                 view.SetActive(true);
+                view.transform.localScale = Vector3.one;
+                NavMeshAgent pooledAgent = view.GetComponent<NavMeshAgent>();
+                pooledAgent.enabled = true;
                 SetPostion(view, position);
+                if (pooledAgent.isOnNavMesh)
+                {
+                    pooledAgent.isStopped = false;
+                }
 
                 return view;
             }
@@ -114,6 +122,44 @@ namespace Assets.Scripts
                 view.SetActive(false);
                 _pool.Push(view);
             }
+        }
+
+        public void FadeAndReturnToPool(Entity enemy, float seconds)
+        {
+            if (_views.Remove(enemy, out GameObject view) == false)
+            {
+                return;
+            }
+
+            NavMeshAgent agent = view.GetComponent<NavMeshAgent>();
+            if (agent != null && agent.isActiveAndEnabled)
+            {
+                if (agent.isOnNavMesh)
+                {
+                    agent.ResetPath();
+                }
+                agent.isStopped = true;
+            }
+            StartCoroutine(FadeView(view, Mathf.Max(0.05f, seconds)));
+        }
+
+        private IEnumerator FadeView(GameObject view, float seconds)
+        {
+            Vector3 startScale = view.transform.localScale;
+            float elapsed = 0f;
+            while (elapsed < seconds)
+            {
+                if (Time.timeScale > 0f && Application.isFocused)
+                {
+                    elapsed += Time.deltaTime;
+                    view.transform.localScale = Vector3.Lerp(startScale, Vector3.zero, Mathf.Clamp01(elapsed / seconds));
+                }
+                yield return null;
+            }
+
+            view.SetActive(false);
+            view.transform.localScale = Vector3.one;
+            _pool.Push(view);
         }
     }
 }

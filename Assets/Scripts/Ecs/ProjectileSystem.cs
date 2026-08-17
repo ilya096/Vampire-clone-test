@@ -25,12 +25,15 @@ namespace Assets.Scripts.Ecs
                 transform.ValueRW.Position = endPosition;
                 projectile.ValueRW.RemainingDistance -= distanceThisFrame;
 
-                Entity target = GetCollidingEnemyAlongSegment(ref state, startPosition, endPosition, hits);
+                Entity target = GetCollidingTargetAlongSegment(ref state, startPosition, endPosition, hits);
                 if (target != Entity.Null)
                 {
                     int damage = projectile.ValueRO.Damage;
-                    EnemyArchetype archetype = SystemAPI.GetComponent<EnemyArchetypeComponent>(target).Value;
-                    if (projectile.ValueRO.DoubleDamageAgainstHeavy && archetype == EnemyArchetype.Heavy)
+                    bool isBoss = SystemAPI.HasComponent<BossTag>(target);
+                    EnemyArchetype archetype = isBoss
+                        ? EnemyArchetype.Normal
+                        : SystemAPI.GetComponent<EnemyArchetypeComponent>(target).Value;
+                    if (isBoss == false && projectile.ValueRO.DoubleDamageAgainstHeavy && archetype == EnemyArchetype.Heavy)
                     {
                         damage *= 2;
                     }
@@ -40,7 +43,7 @@ namespace Assets.Scripts.Ecs
                     {
                         CreateAreaDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ExplosionRadius, damage);
                     }
-                    if (projectile.ValueRO.SlowSeconds > 0f)
+                    if (isBoss == false && projectile.ValueRO.SlowSeconds > 0f)
                     {
                         EnemyBehaviourComponent behaviour = SystemAPI.GetComponent<EnemyBehaviourComponent>(target);
                         behaviour.SlowRemaining = math.max(behaviour.SlowRemaining, projectile.ValueRO.SlowSeconds);
@@ -50,7 +53,7 @@ namespace Assets.Scripts.Ecs
                     {
                         CreateChainDamage(ref state, commandBuffer, target, transform.ValueRO.Position, projectile.ValueRO.ChainLightningRemaining, damage);
                     }
-                    if (projectile.ValueRO.BurnSeconds > 0f)
+                    if (isBoss == false && projectile.ValueRO.BurnSeconds > 0f)
                     {
                         EnemyBehaviourComponent behaviour = SystemAPI.GetComponent<EnemyBehaviourComponent>(target);
                         bool wasBurning = behaviour.BurnRemaining > 0f;
@@ -78,7 +81,7 @@ namespace Assets.Scripts.Ecs
                         continue;
                     }
 
-                    bool weakTarget = archetype == EnemyArchetype.Normal || archetype == EnemyArchetype.Swarm;
+                    bool weakTarget = isBoss == false && (archetype == EnemyArchetype.Normal || archetype == EnemyArchetype.Swarm);
                     if (weakTarget && projectile.ValueRO.PierceRemaining > 0)
                     {
                         projectile.ValueRW.PierceRemaining--;
@@ -120,14 +123,17 @@ namespace Assets.Scripts.Ecs
             commandBuffer.Dispose();
         }
 
-        private Entity GetCollidingEnemyAlongSegment(ref SystemState state, float3 start, float3 end, DynamicBuffer<ProjectileHit> hits)
+        private Entity GetCollidingTargetAlongSegment(ref SystemState state, float3 start, float3 end, DynamicBuffer<ProjectileHit> hits)
         {
             float3 segment = end - start;
             float segmentLengthSquared = math.lengthsq(segment);
             Entity closestEnemy = Entity.Null;
             float closestProgress = float.MaxValue;
 
-            foreach ((RefRO<LocalTransform> transform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            foreach ((RefRO<LocalTransform> transform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>()
+                .WithAll<EnemyTag>()
+                .WithNone<CombatDisabledTag>()
+                .WithEntityAccess())
             {
                 if (WasHit(hits, enemy))
                 {
@@ -137,7 +143,8 @@ namespace Assets.Scripts.Ecs
                 float progress = segmentLengthSquared <= 0.0001f ? 0f : math.saturate(math.dot(transform.ValueRO.Position - start, segment) / segmentLengthSquared);
                 float3 closestPoint = start + segment * progress;
                 float2 planarOffset = new(transform.ValueRO.Position.x - closestPoint.x, transform.ValueRO.Position.z - closestPoint.z);
-                if (math.lengthsq(planarOffset) <= 0.85f * 0.85f && progress < closestProgress)
+                float collisionRadius = SystemAPI.HasComponent<BossTag>(enemy) ? 1.35f : 0.85f;
+                if (math.lengthsq(planarOffset) <= collisionRadius * collisionRadius && progress < closestProgress)
                 {
                     closestEnemy = enemy;
                     closestProgress = progress;
@@ -162,7 +169,10 @@ namespace Assets.Scripts.Ecs
 
         private void CreateAreaDamage(ref SystemState state, EntityCommandBuffer commandBuffer, Entity directTarget, float3 center, float radius, int damage, bool showElectricStormTracer = false)
         {
-            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>()
+                .WithAll<EnemyTag>()
+                .WithNone<CombatDisabledTag>()
+                .WithEntityAccess())
             {
                 if (enemy != directTarget && math.distancesq(enemyTransform.ValueRO.Position, center) <= radius * radius)
                 {
@@ -178,7 +188,10 @@ namespace Assets.Scripts.Ecs
         private void CreateChainDamage(ref SystemState state, EntityCommandBuffer commandBuffer, Entity directTarget, float3 center, int count, int damage)
         {
             int remaining = count;
-            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>()
+                .WithAll<EnemyTag>()
+                .WithNone<CombatDisabledTag>()
+                .WithEntityAccess())
             {
                 if (remaining <= 0) break;
                 if (enemy != directTarget && math.distancesq(enemyTransform.ValueRO.Position, center) <= 4f * 4f)
@@ -205,7 +218,10 @@ namespace Assets.Scripts.Ecs
         {
             result = Entity.Null;
             float closestDistance = float.MaxValue;
-            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            foreach ((RefRO<LocalTransform> enemyTransform, Entity enemy) in SystemAPI.Query<RefRO<LocalTransform>>()
+                .WithAll<EnemyTag>()
+                .WithNone<CombatDisabledTag>()
+                .WithEntityAccess())
             {
                 if (WasHit(hits, enemy)) continue;
                 float distance = math.distancesq(enemyTransform.ValueRO.Position, origin);

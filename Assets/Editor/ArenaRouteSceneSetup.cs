@@ -198,6 +198,7 @@ public static class ArenaRouteSceneSetup
         }
         Debug.Log($"Boss boundary planned NavMesh links: validEndpointPairs={validLinkEndpoints}/{linkCount}.");
         ValidateCaptureProgressBehavior();
+        ValidateFinalBossBehavior();
 
         GameObject roomsRoot = scene.GetRootGameObjects().FirstOrDefault(root => root.name == "RoomsUV2" && root.activeInHierarchy);
         if (roomsRoot == null)
@@ -621,6 +622,50 @@ public static class ArenaRouteSceneSetup
         {
             UnityEngine.Object.DestroyImmediate(testObject);
         }
+    }
+
+    private static void ValidateFinalBossBehavior()
+    {
+        if (FinalBossRuntimeController.ValidateDefaults(out string error) == false)
+        {
+            throw new InvalidOperationException($"Final boss defaults are invalid: {error}");
+        }
+
+        bool sectorInside = FinalBossAttackMath.IsInsideSector(
+            Vector3.zero,
+            Vector3.forward,
+            new Vector3(0f, 0f, 6f),
+            FinalBossRuntimeController.SectorAngleDegrees,
+            FinalBossRuntimeController.SectorRange);
+        bool sectorOutside = FinalBossAttackMath.IsInsideSector(
+            Vector3.zero,
+            Vector3.forward,
+            new Vector3(7f, 0f, 0f),
+            FinalBossRuntimeController.SectorAngleDegrees,
+            FinalBossRuntimeController.SectorRange);
+        float halfRotation = FinalBossAttackMath.GetBeamAngle(
+            FinalBossRuntimeController.BeamRotationSeconds * 0.5f,
+            FinalBossRuntimeController.BeamRotationSeconds);
+        float segmentDistance = FinalBossAttackMath.DistanceToSegmentXZ(
+            new Vector3(2f, 0f, 1f),
+            Vector3.zero,
+            new Vector3(4f, 0f, 0f));
+        Vector3 clampedDestination = FinalBossAttackMath.ClampToCircleXZ(
+            new Vector3(12f, 0f, 0f),
+            Vector3.zero,
+            5f);
+
+        if (sectorInside == false
+            || sectorOutside
+            || Mathf.Approximately(halfRotation, 180f) == false
+            || Mathf.Approximately(segmentDistance, 1f) == false
+            || Mathf.Approximately(clampedDestination.x, 5f) == false)
+        {
+            throw new InvalidOperationException(
+                $"Final boss math validation failed: sectorInside={sectorInside}, sectorOutside={sectorOutside}, halfRotation={halfRotation}, segmentDistance={segmentDistance}, clampedDestination={clampedDestination}.");
+        }
+
+        Debug.Log("Final boss defaults and deterministic attack math are valid.");
     }
 
     private static string GetHierarchyPath(Transform transform)

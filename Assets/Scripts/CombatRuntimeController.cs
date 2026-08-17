@@ -386,6 +386,11 @@ public class CombatRuntimeController : MonoBehaviour
         {
             DamageSource.EnemyRangedProjectile => "Дальний снаряд",
             DamageSource.EnemyContact => "Контакт с противником",
+            DamageSource.BossContact => "Контакт с ядром",
+            DamageSource.BossSector => "Сектор ядра",
+            DamageSource.BossRadial => "Круговой залп ядра",
+            DamageSource.BossBeam => "Вращающийся луч",
+            DamageSource.BossHazard => "Опасная зона ядра",
             _ => "Неизвестная угроза"
         };
     }

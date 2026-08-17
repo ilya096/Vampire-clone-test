@@ -25,7 +25,8 @@ namespace Assets.Scripts.Ecs
             EntityCommandBuffer commandBuffer = new(Allocator.Temp);
 
             foreach ((RefRW<AttackComponent> attack, RefRO<LocalTransform> attackerTransform, RefRO<EnemyArchetypeComponent> archetype) in
-                SystemAPI.Query<RefRW<AttackComponent>, RefRO<LocalTransform>, RefRO<EnemyArchetypeComponent>>())
+                SystemAPI.Query<RefRW<AttackComponent>, RefRO<LocalTransform>, RefRO<EnemyArchetypeComponent>>()
+                    .WithNone<CombatDisabledTag>())
             {
                 attack.ValueRW.TimeToNextAttack -= deltaTime;
 

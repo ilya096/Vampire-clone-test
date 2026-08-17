@@ -53,7 +53,10 @@ namespace Assets.Scripts.Ecs
 
         private bool HasEnemyInAimCone(ref SystemState state, float3 origin, float3 direction, float coneDot, float range)
         {
-            foreach ((RefRO<LocalTransform> transform, Entity _) in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<EnemyTag>().WithEntityAccess())
+            foreach ((RefRO<LocalTransform> transform, Entity _) in SystemAPI.Query<RefRO<LocalTransform>>()
+                .WithAll<EnemyTag>()
+                .WithNone<CombatDisabledTag>()
+                .WithEntityAccess())
             {
                 float3 toEnemy = transform.ValueRO.Position - origin;
                 float distance = math.length(toEnemy);

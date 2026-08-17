@@ -25,6 +25,7 @@ public class GameInstaller : MonoBehaviour
     private WaveRuntimeController _waveRuntimeController;
     private MultiArenaWaveController _multiArenaWaveController;
     private ArenaRouteController _arenaRouteController;
+    private FinalBossRuntimeController _finalBossRuntimeController;
     private PlayerProgressionController _playerProgressionController;
     private DebugAdminPanel _debugAdminPanel;
 
@@ -75,6 +76,13 @@ public class GameInstaller : MonoBehaviour
             _playerEntity,
             _waveRuntimeController,
             _arenaRouteController);
+
+        _finalBossRuntimeController = GetComponent<FinalBossRuntimeController>();
+        if (_finalBossRuntimeController == null)
+        {
+            _finalBossRuntimeController = gameObject.AddComponent<FinalBossRuntimeController>();
+        }
+        _finalBossRuntimeController.Initialize(_world, _playerEntity, _arenaRouteController);
 
         _playerProgressionController = GetComponent<PlayerProgressionController>();
         if (_playerProgressionController == null)

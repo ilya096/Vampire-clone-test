@@ -35,6 +35,7 @@ public sealed class ArenaRouteController : MonoBehaviour
     private float _announcementUntil;
 
     public RoutePhase Phase { get; private set; } = RoutePhase.FirstArena;
+    public ArenaRouteLayout Layout => _layout;
     public event Action<ArenaId> ArenaEntered;
     public event Action CaptureObjectiveCompleted;
     public event Action BossArenaOpened;
@@ -247,7 +248,7 @@ public sealed class ArenaRouteController : MonoBehaviour
             RoutePhase.CapturingR => "УДЕРЖИВАЙТЕ ТОЧКИ ПО 5 СЕКУНД",
             RoutePhase.MovingToO => "ПЕРЕЙДИТЕ В АРЕНУ О",
             RoutePhase.WaitingForOWaves => "АРЕНА О · ВНЕШНЕЕ КОЛЬЦО",
-            RoutePhase.BossArena => "ЦЕНТРАЛЬНАЯ АРЕНА · БОСС",
+            RoutePhase.BossArena => string.Empty,
             _ => string.Empty
         };
     }

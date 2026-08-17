@@ -16,6 +16,7 @@ public class DebugAdminPanel : MonoBehaviour
     private WaveRuntimeController _waves;
     private MultiArenaWaveController _multiArenaWaves;
     private ArenaRouteController _arenaRoute;
+    private FinalBossRuntimeController _finalBoss;
     private bool _paused;
     private bool _debugEnabled;
     private bool _showSpecialCards;
@@ -43,6 +44,7 @@ public class DebugAdminPanel : MonoBehaviour
         _waves = GetComponent<WaveRuntimeController>();
         _multiArenaWaves = GetComponent<MultiArenaWaveController>();
         _arenaRoute = GetComponent<ArenaRouteController>();
+        _finalBoss = GetComponent<FinalBossRuntimeController>();
         CaptureInitialValues();
     }
 
@@ -122,7 +124,7 @@ public class DebugAdminPanel : MonoBehaviour
         DrawOpaquePanel(panel, "DEBUG ADMIN PANEL");
 
         Rect viewport = new(panel.x + 8f, panel.y + 28f, panel.width - 16f, panel.height - 36f);
-        Rect content = new(0f, 0f, 380f, 690f);
+        Rect content = new(0f, 0f, 380f, 790f);
         _debugPanelScroll = GUI.BeginScrollView(viewport, _debugPanelScroll, content, false, true);
 
         float x = 0f;
@@ -185,6 +187,21 @@ public class DebugAdminPanel : MonoBehaviour
                 if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Начать захват Р")) _arenaRoute.BeginCaptureObjective();
                 GUI.enabled = _arenaRoute.Phase == ArenaRouteController.RoutePhase.WaitingForOWaves && secondaryWavesRunning == false;
                 if (GUI.Button(new Rect(x + 195f, y, 177f, 24f), "Открыть центр О")) _arenaRoute.OpenBossArena();
+                GUI.enabled = previousEnabled;
+                y += 34f;
+            }
+
+            GUI.Label(new Rect(x + 12f, y, 350f, 20f), "Final boss acceptance"); y += 22f;
+            if (_finalBoss != null)
+            {
+                string bossHealth = _finalBoss.State == FinalBossRuntimeController.EncounterState.Dormant
+                    ? "—"
+                    : _finalBoss.CurrentHealth.ToString();
+                GUI.Label(new Rect(x + 12f, y, 350f, 20f), $"Boss: {_finalBoss.State} · HP {bossHealth}"); y += 22f;
+                bool previousEnabled = GUI.enabled;
+                GUI.enabled = _finalBoss.IsActive;
+                if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "−4000 HP босса")) _finalBoss.DamageBossForDebug(4000);
+                if (GUI.Button(new Rect(x + 195f, y, 177f, 24f), "Следующий этап босса")) _finalBoss.AdvanceForDebug();
                 GUI.enabled = previousEnabled;
             }
 

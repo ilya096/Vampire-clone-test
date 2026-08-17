@@ -28,7 +28,27 @@ namespace Assets.Scripts.Ecs
     {
         None,
         EnemyContact,
-        EnemyRangedProjectile
+        EnemyRangedProjectile,
+        BossContact,
+        BossSector,
+        BossRadial,
+        BossBeam,
+        BossHazard
+    }
+
+    /// <summary>Marks the single final-boss target without enrolling it in normal enemy behaviour.</summary>
+    public struct BossTag : IComponentData
+    {
+    }
+
+    /// <summary>Blocks damage during the deterministic phase transition.</summary>
+    public struct BossInvulnerableTag : IComponentData
+    {
+    }
+
+    /// <summary>Stops surviving normal enemies while their victory fade is presented.</summary>
+    public struct CombatDisabledTag : IComponentData
+    {
     }
 
     public struct EnemyArchetypeComponent : IComponentData

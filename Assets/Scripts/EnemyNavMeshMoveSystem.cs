@@ -28,7 +28,10 @@ namespace Assets.Scripts
             float deltaTime = SystemAPI.Time.DeltaTime;
 
             foreach((RefRW<LocalTransform> transform, RefRW<EnemyBehaviourComponent> behaviour, RefRO<EnemyArchetypeComponent> archetype, Entity enemy) in
-                SystemAPI.Query<RefRW<LocalTransform>, RefRW<EnemyBehaviourComponent>, RefRO<EnemyArchetypeComponent>>().WithAll<EnemyTag>().WithEntityAccess())
+                SystemAPI.Query<RefRW<LocalTransform>, RefRW<EnemyBehaviourComponent>, RefRO<EnemyArchetypeComponent>>()
+                    .WithAll<EnemyTag>()
+                    .WithNone<CombatDisabledTag>()
+                    .WithEntityAccess())
             {
                 var agent = _enemyViewSynchronizator.CreateEnemyView(enemy, transform.ValueRO.Position);
                 _enemyViewSynchronizator.ConfigureEnemyView(enemy, archetype.ValueRO.Value, behaviour.ValueRO.BurnRemaining > 0f);

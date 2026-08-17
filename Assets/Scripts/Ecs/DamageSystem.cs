@@ -27,6 +27,12 @@ namespace Assets.Scripts.Ecs
 
                 if (state.EntityManager.Exists(target) && SystemAPI.HasComponent<HealthComponent>(target))
                 {
+                    if (SystemAPI.HasComponent<BossInvulnerableTag>(target))
+                    {
+                        commandBuffer.DestroyEntity(request);
+                        continue;
+                    }
+
                     if (SystemAPI.HasComponent<PlayerTag>(target) && SystemAPI.HasComponent<PlayerProgressionState>(target))
                     {
                         RefRW<PlayerProgressionState> progression = SystemAPI.GetComponentRW<PlayerProgressionState>(target);
