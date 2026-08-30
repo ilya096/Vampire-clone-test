@@ -10,6 +10,8 @@ namespace Assets.Scripts.Ecs
     [UpdateAfter(typeof(DamageSystem))]
     public partial struct EnemyDeathSystem : ISystem
     {
+        public void OnCreate(ref SystemState state) => state.RequireForUpdate<SessionCombatStats>();
+
         public void OnUpdate(ref SystemState state)
         {
             EntityCommandBuffer commandBuffer = new(Allocator.Temp);
@@ -26,6 +28,8 @@ namespace Assets.Scripts.Ecs
                 synchronizator ??= ServiceLocator.Get<EnemyViewSynchronizator>();
                 synchronizator.ReturnToPool(enemy);
                 CreateExperiencePickup(commandBuffer, transform.ValueRO.Position, CombatBalance.GetEnemy(archetype.ValueRO.Value).Experience);
+                RefRW<SessionCombatStats> stats = SystemAPI.GetSingletonRW<SessionCombatStats>();
+                stats.ValueRW.ConfirmedKills++;
                 commandBuffer.DestroyEntity(enemy);
             }
 

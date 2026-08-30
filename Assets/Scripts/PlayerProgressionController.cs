@@ -1,4 +1,6 @@
 using Assets.Scripts.Ecs;
+using LogoSurvivor.SessionResults;
+using System;
 using System.Collections.Generic;
 using Unity.Entities;
 using UnityEngine;
@@ -28,6 +30,39 @@ public class PlayerProgressionController : MonoBehaviour
     private SpecialWeapon _specialWeapon;
     private int _specialTier;
     private GUIStyle _experienceBarLabelStyle;
+    private readonly Dictionary<CardKind, int> _appliedCardCounts = new();
+    private readonly List<string> _specialUpgradeNames = new();
+
+    public bool ChoiceOpen => _choiceOpen;
+    public bool ExternalModalActive { get; set; }
+    public bool PresentationVisible { get; set; } = true;
+    public event Action ChoiceClosed;
+
+    public bool HasPendingChoice
+    {
+        get
+        {
+            if (_choiceOpen)
+            {
+                return true;
+            }
+
+            if (_world == null || _world.IsCreated == false || _entityManager.Exists(_playerEntity) == false)
+            {
+                return false;
+            }
+
+            PlayerCombatState combat = _entityManager.GetComponentData<PlayerCombatState>(_playerEntity);
+            PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
+            return combat.Experience >= progression.NextLevelExperience;
+        }
+    }
+
+    public int CurrentLevel => _world != null
+        && _world.IsCreated
+        && _entityManager.Exists(_playerEntity)
+            ? _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity).Level
+            : 1;
 
     public void Initialize(World world, Entity playerEntity)
     {
@@ -43,7 +78,7 @@ public class PlayerProgressionController : MonoBehaviour
             return;
         }
 
-        if (_choiceOpen)
+        if (_choiceOpen || ExternalModalActive)
         {
             return;
         }
@@ -116,6 +151,7 @@ public class PlayerProgressionController : MonoBehaviour
     {
         _choiceOpen = false;
         Time.timeScale = 1f;
+        ChoiceClosed?.Invoke();
     }
 
     private void OnGUI()
@@ -126,6 +162,11 @@ public class PlayerProgressionController : MonoBehaviour
         }
 
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
+        if (PresentationVisible == false)
+        {
+            return;
+        }
+
         DrawExperienceProgress();
 
         if (_choiceOpen == false)
@@ -295,6 +336,8 @@ public class PlayerProgressionController : MonoBehaviour
         _entityManager.SetComponentData(tuningEntity, tuning);
         _entityManager.SetComponentData(_playerEntity, progression);
         _entityManager.SetComponentData(_playerEntity, health);
+        _appliedCardCounts.TryGetValue(kind, out int appliedCount);
+        _appliedCardCounts[kind] = appliedCount + 1;
         Debug.Log($"{ProgressionLogPrefix} Получен апгрейд: {GetCardName(kind)} ({GetRarityName(rarity)}, x{multiplier:F1}) — {result}.");
     }
 
@@ -320,7 +363,9 @@ public class PlayerProgressionController : MonoBehaviour
             }
         }
         _entityManager.SetComponentData(_playerEntity, progression);
-        Debug.Log($"{ProgressionLogPrefix} Получен special-апгрейд {GetSpecialWeaponName(_specialWeapon)} tier {_specialTier}: {GetSpecialLabel(index).Replace("\n", " — ")}." );
+        string specialLabel = GetSpecialLabel(index).Replace("\n", " — ");
+        _specialUpgradeNames.Add(specialLabel);
+        Debug.Log($"{ProgressionLogPrefix} Получен special-апгрейд {GetSpecialWeaponName(_specialWeapon)} tier {_specialTier}: {specialLabel}." );
     }
 
     private bool TryOpenSpecialChoice(CardKind appliedCard, PlayerProgressionState progression)
@@ -407,6 +452,25 @@ public class PlayerProgressionController : MonoBehaviour
     private static Rarity RollRarity(System.Random random) => random.Next(100) switch { < 70 => Rarity.Green, < 90 => Rarity.Blue, < 98 => Rarity.Purple, _ => Rarity.Gold };
     private static float GetRarityMultiplier(Rarity rarity) => rarity switch { Rarity.Blue => 1.5f, Rarity.Purple => 2f, Rarity.Gold => 3f, _ => 1f };
     private static Color GetRarityColor(Rarity rarity) => rarity switch { Rarity.Blue => new Color(0.35f, 0.65f, 1f), Rarity.Purple => new Color(0.75f, 0.4f, 1f), Rarity.Gold => new Color(1f, 0.8f, 0.2f), _ => new Color(0.4f, 1f, 0.4f) };
+
+    public List<SessionUpgradeSnapshot> CreateUpgradeSnapshot()
+    {
+        List<SessionUpgradeSnapshot> result = new();
+        foreach (CardKind kind in _allCards)
+        {
+            if (_appliedCardCounts.TryGetValue(kind, out int level) && level > 0)
+            {
+                result.Add(new SessionUpgradeSnapshot(GetCardName(kind), level));
+            }
+        }
+
+        foreach (string specialUpgradeName in _specialUpgradeNames)
+        {
+            result.Add(new SessionUpgradeSnapshot(specialUpgradeName, 1));
+        }
+
+        return result;
+    }
 
     private void OnDestroy()
     {

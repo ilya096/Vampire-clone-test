@@ -32,6 +32,8 @@ public sealed class MultiArenaWaveController : MonoBehaviour
     private bool _initialized;
     private bool _arenaRStarted;
     private bool _arenaOStarted;
+    private int _arenaRCompletedWaveMask;
+    private int _arenaOCompletedWaveMask;
 
     public ArenaId ActiveArena { get; private set; }
     public ArenaWavePhase Phase { get; private set; } = ArenaWavePhase.Inactive;
@@ -43,6 +45,7 @@ public sealed class MultiArenaWaveController : MonoBehaviour
 
     public event Action<ArenaId> ArenaWavesStarted;
     public event Action<ArenaId> ArenaWavesCompleted;
+    public event Action<ArenaId, int> WaveCompleted;
 
     public void Initialize(
         World world,
@@ -58,6 +61,8 @@ public sealed class MultiArenaWaveController : MonoBehaviour
         _spawnConfigQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnConfigComponent>());
         _spawnStateQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnStateComponent>());
         _arenaRoute.ArenaEntered += HandleArenaEntered;
+        _arenaRCompletedWaveMask = 0;
+        _arenaOCompletedWaveMask = 0;
         _initialized = true;
     }
 
@@ -78,12 +83,14 @@ public sealed class MultiArenaWaveController : MonoBehaviour
                 EnterPhase(ArenaWavePhase.FirstWave);
                 break;
             case ArenaWavePhase.FirstWave:
+                PublishWaveCompleted(ActiveArena, 1);
                 EnterPhase(ArenaWavePhase.Intermission);
                 break;
             case ArenaWavePhase.Intermission:
                 EnterPhase(ArenaWavePhase.SecondWave);
                 break;
             case ArenaWavePhase.SecondWave:
+                PublishWaveCompleted(ActiveArena, 2);
                 CompleteSequence();
                 break;
         }
@@ -148,15 +155,40 @@ public sealed class MultiArenaWaveController : MonoBehaviour
                 EnterPhase(ArenaWavePhase.FirstWave);
                 break;
             case ArenaWavePhase.FirstWave:
+                PublishWaveCompleted(ActiveArena, 1);
                 EnterPhase(ArenaWavePhase.Intermission);
                 break;
             case ArenaWavePhase.Intermission:
                 EnterPhase(ArenaWavePhase.SecondWave);
                 break;
             case ArenaWavePhase.SecondWave:
+                PublishWaveCompleted(ActiveArena, 2);
                 CompleteSequence();
                 break;
         }
+    }
+
+    private void PublishWaveCompleted(ArenaId arena, int waveNumber)
+    {
+        int bit = 1 << (waveNumber - 1);
+        int mask = arena == ArenaId.R ? _arenaRCompletedWaveMask : _arenaOCompletedWaveMask;
+        if ((mask & bit) != 0)
+        {
+            Debug.LogWarning($"Duplicate arena wave completion ignored: arena={arena}, wave={waveNumber}.");
+            return;
+        }
+
+        mask |= bit;
+        if (arena == ArenaId.R)
+        {
+            _arenaRCompletedWaveMask = mask;
+        }
+        else
+        {
+            _arenaOCompletedWaveMask = mask;
+        }
+
+        WaveCompleted?.Invoke(arena, waveNumber);
     }
 
     private void EnterPhase(ArenaWavePhase phase)

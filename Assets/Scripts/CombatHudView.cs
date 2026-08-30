@@ -3,6 +3,7 @@ using UnityEngine.UI;
 
 public class CombatHudView : MonoBehaviour
 {
+    public bool PresentationVisible { get; set; } = true;
     [SerializeField] private Text _healthText;
     [SerializeField] private Text _experienceText;
     [SerializeField] private Text[] _weaponSlots;
@@ -79,6 +80,11 @@ public class CombatHudView : MonoBehaviour
 
     private void OnGUI()
     {
+        if (PresentationVisible == false)
+        {
+            return;
+        }
+
         if (_hasRuntimeData == false)
         {
             return;

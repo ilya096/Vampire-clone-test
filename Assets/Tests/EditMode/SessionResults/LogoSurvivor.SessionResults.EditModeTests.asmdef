@@ -1,0 +1,23 @@
+{
+  "name": "LogoSurvivor.SessionResults.EditModeTests",
+  "rootNamespace": "LogoSurvivor.SessionResults.Tests",
+  "references": [
+    "LogoSurvivor.AchievementCards",
+    "LogoSurvivor.QrContent",
+    "LogoSurvivor.SessionResults"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

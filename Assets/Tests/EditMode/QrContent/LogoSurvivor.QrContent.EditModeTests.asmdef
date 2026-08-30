@@ -1,0 +1,21 @@
+{
+  "name": "LogoSurvivor.QrContent.EditModeTests",
+  "rootNamespace": "LogoSurvivor.QrContent.Tests",
+  "references": [
+    "LogoSurvivor.QrContent"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

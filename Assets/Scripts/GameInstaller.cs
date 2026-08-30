@@ -28,6 +28,7 @@ public class GameInstaller : MonoBehaviour
     private FinalBossRuntimeController _finalBossRuntimeController;
     private PlayerProgressionController _playerProgressionController;
     private DebugAdminPanel _debugAdminPanel;
+    private ContentFinaleRuntimeController _contentFinaleRuntimeController;
 
     private void Awake()
     {
@@ -98,6 +99,20 @@ public class GameInstaller : MonoBehaviour
         }
         _debugAdminPanel.Initialize(_world, _playerEntity);
 
+        _contentFinaleRuntimeController = GetComponent<ContentFinaleRuntimeController>();
+        if (_contentFinaleRuntimeController == null)
+        {
+            _contentFinaleRuntimeController = gameObject.AddComponent<ContentFinaleRuntimeController>();
+        }
+        _contentFinaleRuntimeController.Initialize(
+            _world,
+            _playerEntity,
+            _waveRuntimeController,
+            _multiArenaWaveController,
+            _playerProgressionController,
+            _combatRuntimeController,
+            _finalBossRuntimeController);
+
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);
     }
@@ -133,7 +148,8 @@ public class GameInstaller : MonoBehaviour
             typeof(PlayerCombatState),
             typeof(PlayerProgressionState),
             typeof(PlayerAimComponent),
-            typeof(PlayerDefeatInfo)
+            typeof(PlayerDefeatInfo),
+            typeof(SessionCombatStats)
             );
 
         _entityManager.SetComponentData(_playerEntity, new MoveSpeed()
@@ -154,6 +170,7 @@ public class GameInstaller : MonoBehaviour
         });
         _entityManager.SetComponentData(_playerEntity, new PlayerAimComponent { Direction = new float3(0f, 0f, 1f) });
         _entityManager.SetComponentData(_playerEntity, new PlayerDefeatInfo { LastDamageSource = DamageSource.None });
+        _entityManager.SetComponentData(_playerEntity, new SessionCombatStats());
     }
 
     private void CreateGameplayTuning()

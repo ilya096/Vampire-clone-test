@@ -1,0 +1,21 @@
+{
+  "name": "LogoSurvivor.AchievementCards.EditModeTests",
+  "rootNamespace": "LogoSurvivor.AchievementCards.Tests",
+  "references": [
+    "LogoSurvivor.AchievementCards"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

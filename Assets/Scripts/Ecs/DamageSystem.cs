@@ -14,6 +14,7 @@ namespace Assets.Scripts.Ecs
         {
             state.RequireForUpdate<DamageRequest>();
             state.RequireForUpdate<HealthComponent>();
+            state.RequireForUpdate<SessionCombatStats>();
         }
 
         public void OnUpdate(ref SystemState state)
@@ -52,9 +53,18 @@ namespace Assets.Scripts.Ecs
                     }
 
                     RefRW<HealthComponent> health = SystemAPI.GetComponentRW<HealthComponent>(target);
-                    health.ValueRW.Value = math.max(0, health.ValueRO.Value - damage.ValueRO.Amount);
+                    int actualDamage = math.min(
+                        math.max(0, damage.ValueRO.Amount),
+                        math.max(0, health.ValueRO.Value));
+                    health.ValueRW.Value = math.max(0, health.ValueRO.Value - actualDamage);
 
-                    if (damage.ValueRO.Amount > 0 &&
+                    if (actualDamage > 0 && SystemAPI.HasComponent<EnemyTag>(target))
+                    {
+                        RefRW<SessionCombatStats> stats = SystemAPI.GetSingletonRW<SessionCombatStats>();
+                        stats.ValueRW.ActualDamage += actualDamage;
+                    }
+
+                    if (actualDamage > 0 &&
                         SystemAPI.HasComponent<EnemyTag>(target) &&
                         SystemAPI.HasComponent<LocalTransform>(target))
                     {
@@ -62,7 +72,7 @@ namespace Assets.Scripts.Ecs
                         commandBuffer.AddComponent(damageNumberEvent, new DamageNumberEvent
                         {
                             Position = SystemAPI.GetComponent<LocalTransform>(target).Position,
-                            Amount = damage.ValueRO.Amount
+                            Amount = actualDamage
                         });
                     }
 

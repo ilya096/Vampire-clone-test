@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Assets.Scripts.Ecs;
 using Unity.Collections;
@@ -7,7 +8,6 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
-using UnityEngine.SceneManagement;
 
 public class CombatRuntimeController : MonoBehaviour
 {
@@ -26,12 +26,14 @@ public class CombatRuntimeController : MonoBehaviour
     private EntityQuery _damageNumberQuery;
     private CombatHudView _hud;
     private Transform _playerVisual;
-    private float _defeatUntil = -1f;
+    private bool _defeatPublished;
     private int _damageNumberSequence;
     private GUIStyle _damageNumberStyle;
     private GUIStyle _damageNumberShadowStyle;
 
     private const float DamageNumberDuration = 0.9f;
+
+    public event Action DefeatPublished;
 
     public void Initialize(World world, Entity playerEntity, Transform playerVisual)
     {
@@ -46,22 +48,13 @@ public class CombatRuntimeController : MonoBehaviour
         _damageNumberQuery = _entityManager.CreateEntityQuery(ComponentType.ReadOnly<DamageNumberEvent>());
         _hud = FindAnyObjectByType<CombatHudView>();
         _hud?.ShowDefeat(false);
+        _defeatPublished = false;
     }
 
     private void Update()
     {
         if (_world == null || _world.IsCreated == false || _entityManager.Exists(_playerEntity) == false)
         {
-            return;
-        }
-
-        if (_defeatUntil > 0f)
-        {
-            if (Time.unscaledTime >= _defeatUntil)
-            {
-                SceneManager.LoadScene("Game");
-            }
-
             return;
         }
 
@@ -127,12 +120,26 @@ public class CombatRuntimeController : MonoBehaviour
         PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_playerEntity);
         _hud?.Refresh(health.Value, health.MaxValue, combat.Experience, (int)combat.SelectedWeapon, progression.PistolUpgradeCount, progression.MachineGunUpgradeCount);
 
-        if (health.Value <= 0)
+        if (health.Value <= 0 && _defeatPublished == false)
         {
-            _defeatUntil = Time.unscaledTime + 1f;
+            _defeatPublished = true;
             PlayerDefeatInfo defeatInfo = _entityManager.GetComponentData<PlayerDefeatInfo>(_playerEntity);
             _hud?.ShowDefeat(true, GetDefeatReason(defeatInfo.LastDamageSource), combat.Experience);
+            DefeatPublished?.Invoke();
         }
+    }
+
+    public void SetPresentationVisible(bool visible)
+    {
+        if (_hud != null)
+        {
+            _hud.PresentationVisible = visible;
+        }
+    }
+
+    public void HideDefeatPanel()
+    {
+        _hud?.ShowDefeat(false);
     }
 
     private void PresentProjectiles()

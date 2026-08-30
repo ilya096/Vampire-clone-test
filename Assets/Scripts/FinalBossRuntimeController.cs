@@ -114,6 +114,8 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
     private bool _telegraphActive;
     private bool _beamActive;
     private bool _victoryPublished;
+    private bool _victoryCleanupPublished;
+    private bool _defeatCleanupPublished;
     private string _announcement = string.Empty;
     private float _announcementRemaining;
 
@@ -123,6 +125,8 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
         ? _entityManager.GetComponentData<HealthComponent>(_bossEntity).Value
         : 0;
     public event Action VictoryPublished;
+    public event Action VictoryCleanupCompleted;
+    public event Action DefeatCleanupCompleted;
 
     private bool BossExists => _world != null
         && _world.IsCreated
@@ -135,6 +139,9 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
         _entityManager = world.EntityManager;
         _playerEntity = playerEntity;
         _arenaRoute = arenaRoute;
+        _victoryPublished = false;
+        _victoryCleanupPublished = false;
+        _defeatCleanupPublished = false;
         _layout = arenaRoute != null ? arenaRoute.Layout : FindAnyObjectByType<ArenaRouteLayout>();
 
         if (_arenaRoute == null || _layout == null || _layout.BossBoundaryO == null)
@@ -192,6 +199,17 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
         }
 
         return false;
+    }
+
+    public bool StopForPlayerDefeat()
+    {
+        if (IsActive == false)
+        {
+            return false;
+        }
+
+        StopForDefeat();
+        return true;
     }
 
     public static bool ValidateDefaults(out string error)
@@ -735,6 +753,13 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
     private void CompleteVictory()
     {
         State = EncounterState.Victory;
+        if (_entityManager.Exists(_playerEntity)
+            && _entityManager.HasComponent<SessionCombatStats>(_playerEntity))
+        {
+            SessionCombatStats stats = _entityManager.GetComponentData<SessionCombatStats>(_playerEntity);
+            stats.ConfirmedKills++;
+            _entityManager.SetComponentData(_playerEntity, stats);
+        }
         if (_entityManager.HasComponent<BossInvulnerableTag>(_bossEntity) == false)
         {
             _entityManager.AddComponent<BossInvulnerableTag>(_bossEntity);
@@ -760,7 +785,12 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
         State = EncounterState.Defeated;
         ClearBossAttacks();
         SetAgentStopped(true);
-        Debug.Log("[Logo Survivor][FinalBoss] Defeat detected; boss hazards stopped for scene restart.");
+        Debug.Log("[Logo Survivor][FinalBoss] Defeat detected; boss hazards stopped for session result.");
+        if (_defeatCleanupPublished == false)
+        {
+            _defeatCleanupPublished = true;
+            DefeatCleanupCompleted?.Invoke();
+        }
     }
 
     private void DisableAndFadeCarryOverEnemies()
@@ -817,6 +847,11 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
             _bossVisual = null;
         }
         _victoryCleanupRemaining = float.PositiveInfinity;
+        if (_victoryCleanupPublished == false)
+        {
+            _victoryCleanupPublished = true;
+            VictoryCleanupCompleted?.Invoke();
+        }
     }
 
     private void ClearCombatProjectilesAndPendingDamage()

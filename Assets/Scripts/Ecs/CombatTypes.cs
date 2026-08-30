@@ -163,6 +163,12 @@ namespace Assets.Scripts.Ecs
         public DamageSource LastDamageSource;
     }
 
+    public struct SessionCombatStats : IComponentData
+    {
+        public int ConfirmedKills;
+        public long ActualDamage;
+    }
+
     public struct ProjectileHit : IBufferElementData
     {
         public Entity Target;

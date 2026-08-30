@@ -60,6 +60,7 @@ public class WaveRuntimeController : MonoBehaviour
     private float _phaseRemaining;
     private bool _initialized;
     private bool _completionRaised;
+    private int _completedWaveMask;
 
     public FirstArenaPhase Phase { get; private set; }
     public float PreparationSeconds => _preparationSeconds;
@@ -79,6 +80,7 @@ public class WaveRuntimeController : MonoBehaviour
         ? 0f
         : Mathf.Clamp01(_escortDistanceTravelled / _escortPathLength);
     public event Action FirstArenaCompleted;
+    public event Action<int> WaveCompleted;
 
     /// <summary>
     /// Hidden acceptance helper used by DebugAdminPanel. It advances only the
@@ -97,12 +99,14 @@ public class WaveRuntimeController : MonoBehaviour
                 EnterPhase(FirstArenaPhase.FirstWave);
                 return true;
             case FirstArenaPhase.FirstWave:
+                PublishWaveCompleted(1);
                 EnterPhase(FirstArenaPhase.Intermission);
                 return true;
             case FirstArenaPhase.Intermission:
                 EnterPhase(FirstArenaPhase.SecondWave);
                 return true;
             case FirstArenaPhase.SecondWave:
+                PublishWaveCompleted(2);
                 EnterPhase(FirstArenaPhase.Escort);
                 return true;
             case FirstArenaPhase.Escort:
@@ -123,6 +127,7 @@ public class WaveRuntimeController : MonoBehaviour
         _spawnConfigQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnConfigComponent>());
         _spawnStateQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnStateComponent>());
         _completionRaised = false;
+        _completedWaveMask = 0;
         _initialized = true;
         EnterPhase(FirstArenaPhase.Preparation);
     }
@@ -157,15 +162,30 @@ public class WaveRuntimeController : MonoBehaviour
                 EnterPhase(FirstArenaPhase.FirstWave);
                 break;
             case FirstArenaPhase.FirstWave:
+                PublishWaveCompleted(1);
                 EnterPhase(FirstArenaPhase.Intermission);
                 break;
             case FirstArenaPhase.Intermission:
                 EnterPhase(FirstArenaPhase.SecondWave);
                 break;
             case FirstArenaPhase.SecondWave:
+                PublishWaveCompleted(2);
                 EnterPhase(FirstArenaPhase.Escort);
                 break;
         }
+    }
+
+    private void PublishWaveCompleted(int waveNumber)
+    {
+        int bit = 1 << (waveNumber - 1);
+        if ((_completedWaveMask & bit) != 0)
+        {
+            Debug.LogWarning($"Duplicate first-arena wave completion ignored: wave={waveNumber}.");
+            return;
+        }
+
+        _completedWaveMask |= bit;
+        WaveCompleted?.Invoke(waveNumber);
     }
 
     private void EnterPhase(FirstArenaPhase phase)
