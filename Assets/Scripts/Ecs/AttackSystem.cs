@@ -24,9 +24,10 @@ namespace Assets.Scripts.Ecs
             float deltaTime = SystemAPI.Time.DeltaTime;
             EntityCommandBuffer commandBuffer = new(Allocator.Temp);
 
-            foreach ((RefRW<AttackComponent> attack, RefRO<LocalTransform> attackerTransform, RefRO<EnemyArchetypeComponent> archetype) in
+            foreach ((RefRW<AttackComponent> attack, RefRO<LocalTransform> attackerTransform, RefRO<EnemyArchetypeComponent> archetype, Entity enemy) in
                 SystemAPI.Query<RefRW<AttackComponent>, RefRO<LocalTransform>, RefRO<EnemyArchetypeComponent>>()
-                    .WithNone<CombatDisabledTag>())
+                    .WithNone<CombatDisabledTag>()
+                    .WithEntityAccess())
             {
                 attack.ValueRW.TimeToNextAttack -= deltaTime;
 
@@ -45,10 +46,12 @@ namespace Assets.Scripts.Ecs
                 if (archetype.ValueRO.Value == EnemyArchetype.Ranged)
                 {
                     CreateRangedProjectile(ref state, commandBuffer, attackerTransform.ValueRO.Position, playerTransform.Position);
+                    CreatePresentationEvent(commandBuffer, enemy, playerTransform.Position, EnemyAttackPresentationKind.RangedBarrelRoll);
                 }
                 else
                 {
                     CreateDamageRequest(commandBuffer, player, attack.ValueRO.Damage, DamageSource.EnemyContact);
+                    CreatePresentationEvent(commandBuffer, enemy, playerTransform.Position, EnemyAttackPresentationKind.MeleeNod);
                 }
             }
 
@@ -60,6 +63,21 @@ namespace Assets.Scripts.Ecs
         {
             Entity request = commandBuffer.CreateEntity();
             commandBuffer.AddComponent(request, new DamageRequest { Target = target, Amount = amount, Source = source });
+        }
+
+        private static void CreatePresentationEvent(
+            EntityCommandBuffer commandBuffer,
+            Entity enemy,
+            float3 target,
+            EnemyAttackPresentationKind kind)
+        {
+            Entity presentationEvent = commandBuffer.CreateEntity();
+            commandBuffer.AddComponent(presentationEvent, new EnemyAttackPresentationEvent
+            {
+                Enemy = enemy,
+                Target = target,
+                Kind = kind
+            });
         }
 
         private void CreateRangedProjectile(ref SystemState state, EntityCommandBuffer commandBuffer, float3 start, float3 playerPosition)

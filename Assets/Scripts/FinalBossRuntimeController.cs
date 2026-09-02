@@ -50,25 +50,26 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
     }
 
     public const int BossMaxHealth = 8000;
+    public const int PlayerDamageMultiplier = 2;
     public const float PhaseTwoThreshold = 0.5f;
     public const float PhaseTransitionSeconds = 2f;
     public const float BossMoveSpeed = 1.5f;
-    public const int ContactDamage = 15;
+    public static readonly int ContactDamage = 15 * PlayerDamageMultiplier;
     public const float ContactCooldownSeconds = 1f;
     public const float TelegraphSeconds = 1.2f;
     public const float AttackCooldownSeconds = 2.5f;
-    public const int SectorDamage = 20;
+    public static readonly int SectorDamage = 20 * PlayerDamageMultiplier;
     public const float SectorAngleDegrees = 70f;
     public const float SectorRange = 8f;
-    public const int RadialDamage = 20;
+    public static readonly int RadialDamage = 20 * PlayerDamageMultiplier;
     public const int RadialDirectionCount = 16;
     public const float RadialSafeGapDegrees = 45f;
-    public const int BeamDamage = 25;
+    public static readonly int BeamDamage = 25 * PlayerDamageMultiplier;
     public const float BeamRotationSeconds = 8f;
     public const int HazardZoneCount = 3;
     public const float HazardRadius = 1.5f;
     public const float HazardDurationSeconds = 6f;
-    public const int HazardDamagePerSecond = 10;
+    public static readonly int HazardDamagePerSecond = 10 * PlayerDamageMultiplier;
 
     private const float RadialProjectileSpeed = 8f;
     private const float RadialProjectileLifetime = 3f;
@@ -116,8 +117,6 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
     private bool _victoryPublished;
     private bool _victoryCleanupPublished;
     private bool _defeatCleanupPublished;
-    private string _announcement = string.Empty;
-    private float _announcementRemaining;
 
     public EncounterState State { get; private set; } = EncounterState.Dormant;
     public bool IsActive => State is EncounterState.PhaseOne or EncounterState.Transition or EncounterState.PhaseTwo;
@@ -229,6 +228,16 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
             return false;
         }
 
+        if (ContactDamage != 30
+            || SectorDamage != 40
+            || RadialDamage != 40
+            || BeamDamage != 50
+            || HazardDamagePerSecond != 20)
+        {
+            error = "Final boss player damage multiplier is not applied to every attack source.";
+            return false;
+        }
+
         error = string.Empty;
         return true;
     }
@@ -337,8 +346,6 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
         }
 
         float deltaTime = Time.deltaTime;
-        _announcementRemaining = Mathf.Max(0f, _announcementRemaining - deltaTime);
-
         if (State == EncounterState.Victory)
         {
             UpdateVictoryCleanup(deltaTime);
@@ -1142,8 +1149,7 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
 
     private void Announce(string text, float seconds)
     {
-        _announcement = text;
-        _announcementRemaining = seconds;
+        GameStateTransitionBanner.Show(text);
     }
 
     private void OnGUI()
@@ -1181,10 +1187,6 @@ public sealed class FinalBossRuntimeController : MonoBehaviour
         string health = BossExists ? $"{CurrentHealth} / {BossMaxHealth}" : "0 / 8000";
         GUI.Label(new Rect(frame.x + 12f, frame.y + 3f, frame.width - 24f, 22f), $"КРАСНОЕ ЯДРО  ·  {phase}  ·  {health}");
 
-        if (_announcementRemaining > 0f)
-        {
-            GUI.Box(new Rect(Screen.width * 0.5f - 220f, Screen.height * 0.24f, 440f, 46f), _announcement);
-        }
     }
 
     private void OnDestroy()

@@ -21,6 +21,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     private const string LogPrefix = "[Logo Survivor][ContentFinale]";
     private const string MasterVolumeKey = "session_shell.master_volume";
     private const string FullscreenKey = "session_shell.fullscreen";
+    private const string AchievementPhotoLibraryResourcePath = "AchievementCardPhotoLibrary";
 
     private static bool s_autoStartAfterReload;
 
@@ -29,10 +30,14 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     private Entity _playerEntity;
     private WaveRuntimeController _firstArenaWaves;
     private MultiArenaWaveController _multiArenaWaves;
+    private ArenaRouteController _arenaRoute;
+    private CameraFollow _cameraFollow;
     private PlayerProgressionController _progression;
     private CombatRuntimeController _combat;
     private FinalBossRuntimeController _boss;
+    private DebugAdminPanel _debugAdmin;
     private AchievementCardsSession _achievementCards;
+    private AchievementCardPhotoLibrary _achievementPhotos;
     private QrContentSnapshot _qrContent;
     private readonly SessionResultsCoordinator _results = new();
     private readonly SessionShellStateMachine _shell = new();
@@ -43,6 +48,8 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     private Vector2 _resultScroll;
     private bool _initialized;
     private bool _outcomePending;
+    private ArenaCameraOverviewShotId? _pendingOverview;
+    private bool _overviewActive;
     private float _masterVolume;
     private bool _fullscreenPreference;
 
@@ -51,26 +58,43 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         Entity playerEntity,
         WaveRuntimeController firstArenaWaves,
         MultiArenaWaveController multiArenaWaves,
+        ArenaRouteController arenaRoute,
+        CameraFollow cameraFollow,
         PlayerProgressionController progression,
         CombatRuntimeController combat,
-        FinalBossRuntimeController boss)
+        FinalBossRuntimeController boss,
+        DebugAdminPanel debugAdmin)
     {
         _world = world;
         _entityManager = world.EntityManager;
         _playerEntity = playerEntity;
         _firstArenaWaves = firstArenaWaves;
         _multiArenaWaves = multiArenaWaves;
+        _arenaRoute = arenaRoute;
+        _cameraFollow = cameraFollow;
         _progression = progression;
         _combat = combat;
         _boss = boss;
+        _debugAdmin = debugAdmin;
 
         _achievementCards = new AchievementCardsSession(
             AchievementCardsConfig.CreateDefault(),
             AchievementCardsCatalog.CreateDefault());
+        _achievementPhotos = Resources.Load<AchievementCardPhotoLibrary>(AchievementPhotoLibraryResourcePath);
+        if (_achievementPhotos == null)
+        {
+            Debug.LogWarning($"{LogPrefix} Achievement photos are unavailable; safe placeholders remain active.");
+        }
+        else if (_achievementPhotos.Validate(out string photoLibraryError) == false)
+        {
+            Debug.LogError($"{LogPrefix} Invalid achievement photo library: {photoLibraryError} Safe placeholders remain active.");
+            _achievementPhotos = null;
+        }
         _qrContent = QrContentCatalog.CreateCanonicalFallback().CreateSnapshot();
 
         _firstArenaWaves.WaveCompleted += HandleFirstArenaWaveCompleted;
         _multiArenaWaves.WaveCompleted += HandleArenaWaveCompleted;
+        _arenaRoute.OverviewRequested += HandleOverviewRequested;
         _progression.ChoiceClosed += HandleProgressionChoiceClosed;
         _combat.DefeatPublished += HandleDefeatPublished;
         _boss.VictoryPublished += HandleVictoryPublished;
@@ -104,7 +128,9 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             && Time.timeScale > 0f;
         _results.AddActiveTime(Time.unscaledDeltaTime, gameplayActive, Application.isFocused);
 
-        if (Application.isFocused && _achievementOverlay != AchievementOverlay.None)
+        if (Application.isFocused
+            && _shell.IsPauseLayerActive == false
+            && _achievementOverlay != AchievementOverlay.None)
         {
             _overlayElapsedSeconds += Time.unscaledDeltaTime;
         }
@@ -130,6 +156,8 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         bool confirmPressed = keyboard.enterKey.wasPressedThisFrame
             || keyboard.numpadEnterKey.wasPressedThisFrame
             || keyboard.spaceKey.wasPressedThisFrame;
+        bool pausePressed = keyboard.escapeKey.wasPressedThisFrame
+            || keyboard.f10Key.wasPressedThisFrame;
 
         if (_achievementOverlay == AchievementOverlay.Intro)
         {
@@ -137,6 +165,37 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             {
                 CloseIntro();
             }
+            return;
+        }
+
+        if (_shell.IsPauseLayerActive)
+        {
+            if (_shell.Current == SessionShellState.Pause
+                && keyboard.shiftKey.isPressed
+                && keyboard.numpad0Key.wasPressedThisFrame)
+            {
+                _debugAdmin?.TryUnlockDevelopmentTools();
+            }
+
+            if (pausePressed == false)
+            {
+                return;
+            }
+
+            if (_shell.Current == SessionShellState.Pause)
+            {
+                ContinueFromPause();
+            }
+            else
+            {
+                CancelShellOverlay();
+            }
+            return;
+        }
+
+        if (pausePressed && _shell.Current is SessionShellState.Gameplay or SessionShellState.Result)
+        {
+            OpenPause();
             return;
         }
 
@@ -150,21 +209,19 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             return;
         }
 
-        if (keyboard.escapeKey.wasPressedThisFrame == false)
+        if (pausePressed == false)
         {
             return;
         }
 
         switch (_shell.Current)
         {
-            case SessionShellState.Gameplay when _progression.ChoiceOpen == false:
-                OpenPause();
-                break;
-            case SessionShellState.Pause:
-                ContinueGameplay();
-                break;
             case SessionShellState.Settings:
             case SessionShellState.Credits:
+            case SessionShellState.DevelopmentHub:
+            case SessionShellState.DevelopmentParameters:
+            case SessionShellState.DevelopmentSpecialCards:
+            case SessionShellState.DevelopmentLog:
             case SessionShellState.ExpandedCard:
             case SessionShellState.ConfirmRestart:
             case SessionShellState.ConfirmExit:
@@ -229,6 +286,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             return;
         }
 
+        CancelOverviewForResult();
         _outcomePending = true;
         _achievementCards.TryFinish(AchievementSessionState.Defeat);
         _combat.HideDefeatPanel();
@@ -248,6 +306,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             return;
         }
 
+        CancelOverviewForResult();
         _outcomePending = true;
         _achievementCards.TryFinish(AchievementSessionState.Victory);
         _progression.ExternalModalActive = true;
@@ -312,6 +371,9 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         _achievementCards.Reset();
         _results.Reset();
         _outcomePending = false;
+        _pendingOverview = null;
+        _overviewActive = false;
+        _cameraFollow?.SetPauseOverlayActive(false);
         _resultScroll = Vector2.zero;
         if (Screen.fullScreen != _fullscreenPreference)
         {
@@ -328,6 +390,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         }
         else
         {
+            RegisterPendingOverview(ArenaCameraOverviewShotId.IntroOverview);
             ResumeGameplayAfterModalQueue();
         }
     }
@@ -341,6 +404,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
         _achievementCards.DismissIntro();
         _achievementOverlay = AchievementOverlay.None;
+        RegisterPendingOverview(ArenaCameraOverviewShotId.IntroOverview);
         ResumeGameplayAfterModalQueue();
     }
 
@@ -384,7 +448,17 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
     private void ResumeGameplayAfterModalQueue()
     {
-        if (_shell.Current != SessionShellState.Gameplay || _outcomePending)
+        if (_shell.Current != SessionShellState.Gameplay
+            || _outcomePending
+            || _overviewActive
+            || _achievementOverlay != AchievementOverlay.None
+            || _progression.ChoiceOpen
+            || _progression.HasPendingChoice)
+        {
+            return;
+        }
+
+        if (TryStartPendingOverview())
         {
             return;
         }
@@ -394,6 +468,84 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         Time.timeScale = 1f;
     }
 
+    private void HandleOverviewRequested(ArenaCameraOverviewShotId shotId)
+    {
+        RegisterPendingOverview(shotId);
+        ResumeGameplayAfterModalQueue();
+    }
+
+    private void RegisterPendingOverview(ArenaCameraOverviewShotId shotId)
+    {
+        if (_outcomePending || _results.HasSnapshot)
+        {
+            return;
+        }
+
+        if (_overviewActive || _pendingOverview.HasValue)
+        {
+            Debug.LogWarning($"{LogPrefix} Duplicate camera overview request ignored: {shotId}.");
+            return;
+        }
+
+        _pendingOverview = shotId;
+        Debug.Log($"{LogPrefix} Camera overview queued: {shotId}.");
+    }
+
+    private bool TryStartPendingOverview()
+    {
+        if (_pendingOverview.HasValue == false
+            || _overviewActive
+            || _achievementOverlay != AchievementOverlay.None
+            || _progression.ChoiceOpen
+            || _outcomePending
+            || _shell.Current != SessionShellState.Gameplay)
+        {
+            return false;
+        }
+
+        ArenaCameraOverviewShotId shotId = _pendingOverview.Value;
+        _pendingOverview = null;
+        _overviewActive = true;
+        _progression.ExternalModalActive = true;
+        SetGameplayPresentation(false);
+        PauseGameplay();
+
+        if (_cameraFollow != null
+            && _cameraFollow.TryPlayOverview(shotId, HandleOverviewCompleted))
+        {
+            return true;
+        }
+
+        _overviewActive = false;
+        if (_cameraFollow == null)
+        {
+            Debug.LogError($"{LogPrefix} Camera overview skipped: CameraFollow is unavailable.");
+        }
+        Debug.LogWarning($"{LogPrefix} Camera overview safely skipped: {shotId}.");
+        return false;
+    }
+
+    private void HandleOverviewCompleted()
+    {
+        if (_overviewActive == false)
+        {
+            return;
+        }
+
+        _overviewActive = false;
+        ResumeGameplayAfterModalQueue();
+    }
+
+    private void CancelOverviewForResult()
+    {
+        _pendingOverview = null;
+        if (_overviewActive)
+        {
+            _cameraFollow.CancelOverviewForResult();
+            _overviewActive = false;
+        }
+    }
+
     private void OpenPause()
     {
         if (_shell.Pause() == false)
@@ -401,15 +553,46 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             return;
         }
 
+        _cameraFollow?.SetPauseOverlayActive(true);
         _progression.ExternalModalActive = true;
         SetGameplayPresentation(false);
         PauseGameplay();
     }
 
-    private void ContinueGameplay()
+    private void ContinueFromPause()
     {
         if (_shell.Continue() == false)
         {
+            return;
+        }
+
+        _cameraFollow?.SetPauseOverlayActive(false);
+        RestorePauseCaller();
+    }
+
+    private void RestorePauseCaller()
+    {
+        if (_shell.Current == SessionShellState.Result)
+        {
+            _progression.ExternalModalActive = true;
+            SetGameplayPresentation(false);
+            PauseGameplay();
+            return;
+        }
+
+        if (_achievementOverlay == AchievementOverlay.Card || _overviewActive)
+        {
+            _progression.ExternalModalActive = true;
+            SetGameplayPresentation(false);
+            PauseGameplay();
+            return;
+        }
+
+        if (_progression.ChoiceOpen)
+        {
+            _progression.ExternalModalActive = false;
+            SetGameplayPresentation(true);
+            PauseGameplay();
             return;
         }
 
@@ -452,6 +635,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
     private void RestartSession(bool autoStart)
     {
+        _debugAdmin?.ResetAllDebugValues();
         s_autoStartAfterReload = autoStart;
         Time.timeScale = 1f;
         SceneManager.LoadScene("Game");
@@ -490,7 +674,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         }
 
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
-        GUI.depth = -900;
+        GUI.depth = -1000;
 
         if (_achievementOverlay == AchievementOverlay.Intro)
         {
@@ -498,7 +682,8 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             return;
         }
 
-        if (_achievementOverlay == AchievementOverlay.Card)
+        if (_shell.IsPauseLayerActive == false
+            && _achievementOverlay == AchievementOverlay.Card)
         {
             DrawAchievementCard(_presentedCard, allowContinue: true);
             return;
@@ -517,6 +702,18 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
                 break;
             case SessionShellState.Credits:
                 DrawCredits();
+                break;
+            case SessionShellState.DevelopmentHub:
+                DrawDevelopmentHub();
+                break;
+            case SessionShellState.DevelopmentParameters:
+                DrawDevelopmentParameters();
+                break;
+            case SessionShellState.DevelopmentSpecialCards:
+                DrawDevelopmentSpecialCards();
+                break;
+            case SessionShellState.DevelopmentLog:
+                DrawDevelopmentLog();
                 break;
             case SessionShellState.Result:
                 DrawResult();
@@ -594,7 +791,21 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         string type = card.Kind == AchievementCardKind.Direction ? "НАПРАВЛЕНИЕ" : "ЭТАП";
         Rect panel = CenteredPanel(Mathf.Min(860f, Screen.width - 30f), Mathf.Min(560f, Screen.height - 30f));
         GUI.Box(panel, $"{type} · {title}");
-        GUI.Box(new Rect(panel.x + 35f, panel.y + 70f, panel.width * 0.34f, panel.height - 150f), $"БЕЗОПАСНЫЙ\nПЛЕЙСХОЛДЕР\n\n{card.Image.Resolve().AssetId}");
+        float imageSide = Mathf.Min(panel.width * 0.34f, panel.height - 180f);
+        Rect imageRect = new(
+            panel.x + 35f,
+            panel.y + 70f + (panel.height - 150f - imageSide) * 0.5f,
+            imageSide,
+            imageSide);
+        if (_achievementPhotos != null && _achievementPhotos.TryGetPhoto(card.Id, out Texture2D photo))
+        {
+            GUI.Box(imageRect, GUIContent.none);
+            GUI.DrawTexture(imageRect, photo, ScaleMode.ScaleToFit, true);
+        }
+        else
+        {
+            GUI.Box(imageRect, $"БЕЗОПАСНЫЙ\nПЛЕЙСХОЛДЕР\n\n{card.Image.Resolve().AssetId}");
+        }
         GUI.Label(new Rect(panel.x + panel.width * 0.4f, panel.y + 85f, panel.width * 0.54f, panel.height - 180f), body);
 
         if (allowContinue)
@@ -616,12 +827,71 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     private void DrawPauseMenu()
     {
         DrawBackdrop();
-        Rect panel = CenteredPanel(440f, 450f);
+        bool developmentBuild = Debug.isDebugBuild && _debugAdmin != null;
+        Rect panel = CenteredPanel(440f, developmentBuild ? 520f : 450f);
         GUI.Box(panel, "ПАУЗА");
-        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 80f, 300f, 54f), "ПРОДОЛЖИТЬ")) ContinueGameplay();
-        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 150f, 300f, 54f), "НАСТРОЙКИ")) _shell.OpenSettings();
-        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 220f, 300f, 54f), "НАЧАТЬ ЗАНОВО")) _shell.OpenRestartConfirmation();
-        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 290f, 300f, 54f), "ВЫЙТИ ИЗ ИГРЫ")) _shell.OpenExitConfirmation();
+        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 70f, 300f, 54f), "ПРОДОЛЖИТЬ")) ContinueFromPause();
+        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 134f, 300f, 54f), "НАСТРОЙКИ")) _shell.OpenSettings();
+
+        float y = panel.y + 198f;
+        if (developmentBuild)
+        {
+            string label = _debugAdmin.DebugUnlocked
+                ? "РАЗРАБОТКА"
+                : $"ЖУРНАЛ ({_debugAdmin.DevelopmentLogErrorCount})";
+            if (GUI.Button(new Rect(panel.x + 70f, y, 300f, 54f), label))
+            {
+                if (_debugAdmin.DebugUnlocked) _shell.OpenDevelopmentHub();
+                else _shell.OpenDevelopmentLog();
+            }
+            y += 64f;
+        }
+
+        if (GUI.Button(new Rect(panel.x + 70f, y, 300f, 54f), "НАЧАТЬ ЗАНОВО")) _shell.OpenRestartConfirmation();
+        y += 64f;
+        if (GUI.Button(new Rect(panel.x + 70f, y, 300f, 54f), "ВЫЙТИ ИЗ ИГРЫ")) _shell.OpenExitConfirmation();
+    }
+
+    private void DrawDevelopmentHub()
+    {
+        DrawBackdrop();
+        Rect panel = CenteredPanel(460f, 390f);
+        GUI.Box(panel, "РАЗРАБОТКА");
+        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 70f, 320f, 54f), "ПАРАМЕТРЫ")) _shell.OpenDevelopmentParameters();
+        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 134f, 320f, 54f), "SPECIAL-КАРТЫ")) _shell.OpenDevelopmentSpecialCards();
+        if (GUI.Button(new Rect(panel.x + 70f, panel.y + 198f, 320f, 54f), $"ЖУРНАЛ ({_debugAdmin.DevelopmentLogErrorCount})")) _shell.OpenDevelopmentLog();
+        if (GUI.Button(new Rect(panel.x + 100f, panel.y + 286f, 260f, 48f), "НАЗАД")) CancelShellOverlay();
+    }
+
+    private void DrawDevelopmentParameters()
+    {
+        DrawBackdrop();
+        _debugAdmin.DrawParametersPage();
+        DrawDevelopmentBackButton();
+    }
+
+    private void DrawDevelopmentSpecialCards()
+    {
+        DrawBackdrop();
+        _debugAdmin.DrawSpecialCardsPage();
+        DrawDevelopmentBackButton();
+    }
+
+    private void DrawDevelopmentLog()
+    {
+        DrawBackdrop();
+        if (_debugAdmin.DrawRuntimeLogPage())
+        {
+            CancelShellOverlay();
+        }
+    }
+
+    private void DrawDevelopmentBackButton()
+    {
+        if (GUI.Button(new Rect(Screen.width - 156f, 20f, 136f, 36f), "НАЗАД"))
+        {
+            CancelShellOverlay();
+        }
     }
 
     private void DrawSettings()
@@ -821,6 +1091,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     {
         if (_firstArenaWaves != null) _firstArenaWaves.WaveCompleted -= HandleFirstArenaWaveCompleted;
         if (_multiArenaWaves != null) _multiArenaWaves.WaveCompleted -= HandleArenaWaveCompleted;
+        if (_arenaRoute != null) _arenaRoute.OverviewRequested -= HandleOverviewRequested;
         if (_progression != null) _progression.ChoiceClosed -= HandleProgressionChoiceClosed;
         if (_combat != null) _combat.DefeatPublished -= HandleDefeatPublished;
         if (_boss != null)
@@ -829,6 +1100,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             _boss.VictoryCleanupCompleted -= HandleVictoryCleanupCompleted;
             _boss.DefeatCleanupCompleted -= HandleDefeatCleanupCompleted;
         }
+        _cameraFollow?.SetPauseOverlayActive(false);
         Time.timeScale = 1f;
     }
 }

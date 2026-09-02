@@ -1,7 +1,6 @@
 using Assets.Scripts.Ecs;
 using Unity.Entities;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using System.Collections.Generic;
 using System.Text;
 
@@ -10,6 +9,8 @@ using System.Text;
 /// </summary>
 public class DebugAdminPanel : MonoBehaviour
 {
+    private static bool s_debugUnlocked;
+
     private World _world;
     private EntityManager _entityManager;
     private Entity _player;
@@ -17,9 +18,6 @@ public class DebugAdminPanel : MonoBehaviour
     private MultiArenaWaveController _multiArenaWaves;
     private ArenaRouteController _arenaRoute;
     private FinalBossRuntimeController _finalBoss;
-    private bool _paused;
-    private bool _debugEnabled;
-    private bool _showSpecialCards;
     private GameplayTuningComponent _initialTuning;
     private PlayerProgressionState _initialProgression;
     private HealthComponent _initialHealth;
@@ -29,12 +27,20 @@ public class DebugAdminPanel : MonoBehaviour
     private float _initialEscortRadius;
     private readonly Dictionary<string, string> _valueInputs = new();
     private Vector2 _debugPanelScroll;
-    private bool _showRuntimeLog;
     private Vector2 _runtimeLogScroll;
     private bool _scrollRuntimeLogToBottom;
     private GUIStyle _runtimeLogStyle;
     private int _observedRuntimeLogVersion;
     private bool _controlErrorArmed;
+
+    public bool DebugUnlocked => s_debugUnlocked;
+    public int DevelopmentLogErrorCount => DevelopmentLogBuffer.ErrorCount;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetApplicationState()
+    {
+        s_debugUnlocked = false;
+    }
 
     public void Initialize(World world, Entity player)
     {
@@ -48,80 +54,37 @@ public class DebugAdminPanel : MonoBehaviour
         CaptureInitialValues();
     }
 
-    private void Update()
+    public bool TryUnlockDevelopmentTools()
     {
-        if (_world == null || _world.IsCreated == false || _entityManager.Exists(_player) == false || Keyboard.current == null)
+        if (Debug.isDebugBuild == false || s_debugUnlocked)
+        {
+            return false;
+        }
+
+        s_debugUnlocked = true;
+        return true;
+    }
+
+    public void ResetAllDebugValues()
+    {
+        if (_world == null || _world.IsCreated == false || _entityManager.Exists(_player) == false)
         {
             return;
         }
 
-        if (Keyboard.current.escapeKey.wasPressedThisFrame || Keyboard.current.f10Key.wasPressedThisFrame)
-        {
-            SetPaused(!_paused);
-        }
-
-        if (_paused && Keyboard.current.shiftKey.isPressed && Keyboard.current.numpad0Key.wasPressedThisFrame)
-        {
-            _debugEnabled = !_debugEnabled;
-        }
+        ResetPlayerAndWeapons();
+        ResetProgression();
+        ResetWaves();
+        _valueInputs.Clear();
     }
 
-    private void SetPaused(bool paused)
+    public void DrawParametersPage()
     {
-        _paused = paused;
-        Time.timeScale = paused ? 0f : 1f;
-    }
-
-    private void OnGUI()
-    {
-        if (_paused == false)
-        {
-            return;
-        }
-
-        int previousDepth = GUI.depth;
-        GUI.depth = -1000;
-        try
-        {
-            DrawPauseInterface();
-        }
-        finally
-        {
-            GUI.depth = previousDepth;
-        }
-    }
-
-    private void DrawPauseInterface()
-    {
-
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
-        GUI.Box(new Rect(Screen.width * 0.5f - 160f, 20f, 320f, 34f), _debugEnabled ? "ПАУЗА  ·  DEBUG" : "ПАУЗА  ·  Shift+Num 0: debug");
-
-        if (Debug.isDebugBuild)
-        {
-            int errorCount = DevelopmentLogBuffer.ErrorCount;
-            string logButtonLabel = _showRuntimeLog ? "СКРЫТЬ ЖУРНАЛ" : $"ЖУРНАЛ ({errorCount})";
-            if (GUI.Button(new Rect(Screen.width - 176f, 20f, 160f, 34f), logButtonLabel))
-            {
-                _showRuntimeLog = !_showRuntimeLog;
-                _scrollRuntimeLogToBottom = _showRuntimeLog;
-            }
-
-            if (_showRuntimeLog)
-            {
-                DrawRuntimeLogPanel();
-                return;
-            }
-        }
-
-        if (_debugEnabled == false)
-        {
-            return;
-        }
 
         float panelHeight = Mathf.Clamp(Screen.height - 86f, 220f, 560f);
-        Rect panel = new(16f, 70f, 402f, panelHeight);
-        DrawOpaquePanel(panel, "DEBUG ADMIN PANEL");
+        Rect panel = new(Screen.width * 0.5f - 201f, 70f, 402f, panelHeight);
+        DrawOpaquePanel(panel, "РАЗРАБОТКА · ПАРАМЕТРЫ");
 
         Rect viewport = new(panel.x + 8f, panel.y + 28f, panel.width - 16f, panel.height - 36f);
         Rect content = new(0f, 0f, 380f, 790f);
@@ -145,15 +108,14 @@ public class DebugAdminPanel : MonoBehaviour
             tuning.ExperienceRadius = DrawValue(x, y, "XP radius", tuning.ExperienceRadius, 0.5f, 12f); y += 25f;
             progression.ExperienceValueMultiplier = DrawValue(x, y, "XP value", progression.ExperienceValueMultiplier, 0.5f, 5f); y += 25f;
             progression.NextLevelExperience = Mathf.RoundToInt(DrawValue(x, y, "Next XP", progression.NextLevelExperience, 1f, 500f)); y += 28f;
-            if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Сброс прогрессии")) { ResetProgression(); return; }
-            if (GUI.Button(new Rect(x + 195f, y, 177f, 24f), _showSpecialCards ? "Скрыть special-карты" : "Special-карты...")) _showSpecialCards = !_showSpecialCards;
+            if (GUI.Button(new Rect(x + 12f, y, 360f, 24f), "Сброс прогрессии")) { ResetProgression(); return; }
             y += 32f;
 
             GUI.Label(new Rect(x + 12f, y, 350f, 20f), "Волны и вагонетка"); y += 22f;
             if (_waves != null)
             {
                 _waves.FirstWaveSeconds = DrawValue(x, y, "Wave 1 sec (all)", _waves.FirstWaveSeconds, 5f, 90f); y += 25f;
-                _waves.SecondWaveSeconds = DrawValue(x, y, "Wave 2 sec (all)", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
+                _waves.SecondWaveSeconds = DrawValue(x, y, "Wave 2 sec (arena O)", _waves.SecondWaveSeconds, 5f, 120f); y += 25f;
                 _waves.EscortSpeed = DrawValue(x, y, "Cart speed", _waves.EscortSpeed, 0.1f, 8f); y += 25f;
                 _waves.EscortPlayerRadius = DrawValue(x, y, "Cart radius", _waves.EscortPlayerRadius, 0.5f, 10f); y += 28f;
                 if (GUI.Button(new Rect(x + 12f, y, 170f, 24f), "Сброс волн/вагонетки")) { ResetWaves(); return; }
@@ -214,13 +176,9 @@ public class DebugAdminPanel : MonoBehaviour
             GUI.EndScrollView();
         }
 
-        if (_showSpecialCards)
-        {
-            DrawSpecialCardsPanel(progression);
-        }
     }
 
-    private void DrawRuntimeLogPanel()
+    public bool DrawRuntimeLogPage()
     {
         if (_observedRuntimeLogVersion != DevelopmentLogBuffer.Version)
         {
@@ -260,8 +218,7 @@ public class DebugAdminPanel : MonoBehaviour
         if (GUI.Button(new Rect(panel.xMax - 132f, buttonY, 120f, 26f), "ЗАКРЫТЬ"))
         {
             _controlErrorArmed = false;
-            _showRuntimeLog = false;
-            return;
+            return true;
         }
 
         string logText = DevelopmentLogBuffer.BuildText();
@@ -296,12 +253,20 @@ public class DebugAdminPanel : MonoBehaviour
             _runtimeLogScroll.y = contentHeight;
             _scrollRuntimeLogToBottom = false;
         }
+
+        return false;
     }
 
-    private void DrawSpecialCardsPanel(PlayerProgressionState progression)
+    public void DrawSpecialCardsPage()
     {
-        Rect panel = new(418f, 70f, 370f, 330f);
-        DrawOpaquePanel(panel, "SPECIAL-КАРТЫ · прямое включение");
+        if (_world == null || _world.IsCreated == false || _entityManager.Exists(_player) == false)
+        {
+            return;
+        }
+
+        PlayerProgressionState progression = _entityManager.GetComponentData<PlayerProgressionState>(_player);
+        Rect panel = new(Screen.width * 0.5f - 185f, Screen.height * 0.5f - 165f, 370f, 330f);
+        DrawOpaquePanel(panel, "РАЗРАБОТКА · SPECIAL-КАРТЫ");
         float y = panel.y + 30f;
 
         GUI.Label(new Rect(panel.x + 12f, y, 340f, 20f), "Пистолет"); y += 20f;
@@ -399,11 +364,6 @@ public class DebugAdminPanel : MonoBehaviour
         _waves.SecondWaveSeconds = _initialSecondWave;
         _waves.EscortSpeed = _initialEscortSpeed;
         _waves.EscortPlayerRadius = _initialEscortRadius;
-    }
-
-    private void OnDestroy()
-    {
-        if (_paused) Time.timeScale = 1f;
     }
 
 }
