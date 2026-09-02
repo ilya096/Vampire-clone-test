@@ -8,8 +8,8 @@ using System;
 using System.Collections.Generic;
 
 /// <summary>
-/// Runs the validated first-arena vertical slice: preparation, two fixed waves,
-/// then the cart escort that unlocks the P -> R route gate. The values are intentionally local
+/// Runs the first-arena vertical slice: preparation, a fixed first wave, then
+/// an objective-driven second wave where the cart escort unlocks the P -> R route gate. The values are intentionally local
 /// defaults and are exposed for the later debug panel and balance pass.
 /// </summary>
 public class WaveRuntimeController : MonoBehaviour
@@ -55,6 +55,10 @@ public class WaveRuntimeController : MonoBehaviour
     private Vector3 _cartStart;
     private Vector3 _cartEnd;
     private readonly List<Vector3> _escortPoints = new();
+    private readonly List<Renderer> _routeArrowRenderers = new();
+    private readonly List<float> _routeArrowDistances = new();
+    private GameObject _routeArrowRoot;
+    private Mesh _routeArrowMesh;
     private float _escortPathLength;
     private float _escortDistanceTravelled;
     private float _phaseRemaining;
@@ -106,10 +110,8 @@ public class WaveRuntimeController : MonoBehaviour
                 EnterPhase(FirstArenaPhase.SecondWave);
                 return true;
             case FirstArenaPhase.SecondWave:
-                PublishWaveCompleted(2);
-                EnterPhase(FirstArenaPhase.Escort);
-                return true;
             case FirstArenaPhase.Escort:
+                PublishWaveCompleted(2);
                 EnterPhase(FirstArenaPhase.Complete);
                 return true;
             default:
@@ -139,7 +141,7 @@ public class WaveRuntimeController : MonoBehaviour
             return;
         }
 
-        if (Phase == FirstArenaPhase.Escort)
+        if (Phase is FirstArenaPhase.SecondWave or FirstArenaPhase.Escort)
         {
             UpdateEscort();
             return;
@@ -169,8 +171,6 @@ public class WaveRuntimeController : MonoBehaviour
                 EnterPhase(FirstArenaPhase.SecondWave);
                 break;
             case FirstArenaPhase.SecondWave:
-                PublishWaveCompleted(2);
-                EnterPhase(FirstArenaPhase.Escort);
                 break;
         }
     }
@@ -196,18 +196,23 @@ public class WaveRuntimeController : MonoBehaviour
             case FirstArenaPhase.Preparation:
                 _phaseRemaining = _preparationSeconds;
                 SetSpawning(false, 0f, 0);
+                GameStateTransitionBanner.Show("ПОДГОТОВКА");
                 break;
             case FirstArenaPhase.FirstWave:
                 _phaseRemaining = _firstWaveSeconds;
                 SetSpawning(true, _firstWaveSpawnInterval, _firstWaveMaxEnemies);
+                GameStateTransitionBanner.Show("ПЕРВАЯ ВОЛНА");
                 break;
             case FirstArenaPhase.Intermission:
                 _phaseRemaining = _intermissionSeconds;
                 SetSpawning(false, 0f, 0);
+                GameStateTransitionBanner.Show("ПЕРЕДЫШКА");
                 break;
             case FirstArenaPhase.SecondWave:
-                _phaseRemaining = _secondWaveSeconds;
+                _phaseRemaining = 0f;
                 SetSpawning(true, _secondWaveSpawnInterval, _secondWaveMaxEnemies);
+                CreateEscortPresentation();
+                GameStateTransitionBanner.Show("ВТОРАЯ ВОЛНА: СОПРОВОЖДЕНИЕ");
                 break;
             case FirstArenaPhase.Escort:
                 _phaseRemaining = 0f;
@@ -217,6 +222,7 @@ public class WaveRuntimeController : MonoBehaviour
             case FirstArenaPhase.Complete:
                 _phaseRemaining = 0f;
                 SetSpawning(false, 0f, 0);
+                SetRouteArrowsVisible(false);
                 if (_completionRaised == false)
                 {
                     _completionRaised = true;
@@ -279,7 +285,7 @@ public class WaveRuntimeController : MonoBehaviour
         _cart.transform.localScale = new Vector3(1.4f, 0.7f, 1f);
         Destroy(_cart.GetComponent<Collider>());
         RuntimeRendererUtility.ConfigureMesh(_cart.GetComponent<Renderer>(), new Color(1f, 0.7f, 0.15f));
-
+        CreateRouteArrows();
     }
 
     private void UpdateEscort()
@@ -295,11 +301,86 @@ public class WaveRuntimeController : MonoBehaviour
         _escortDistanceTravelled = Mathf.Clamp(_escortDistanceTravelled + deltaDistance, 0f, _escortPathLength);
         Vector3 nextPosition = EvaluateEscortPath(_escortDistanceTravelled);
         _cart.transform.position = nextPosition + Vector3.up * 0.35f;
+        UpdateRouteArrows();
 
         if (_escortDistanceTravelled >= _escortPathLength)
         {
+            PublishWaveCompleted(2);
             EnterPhase(FirstArenaPhase.Complete);
         }
+    }
+
+    private void CreateRouteArrows()
+    {
+        if (_routeArrowRoot != null || _escortPathLength <= 0f)
+        {
+            return;
+        }
+
+        _routeArrowRoot = new GameObject("EscortRouteArrows");
+        _routeArrowMesh = CreateRouteArrowMesh();
+        const float spacing = 2.25f;
+        for (float distance = spacing * 0.5f; distance < _escortPathLength; distance += spacing)
+        {
+            Vector3 position = EvaluateEscortPath(distance);
+            Vector3 next = EvaluateEscortPath(Mathf.Min(distance + 0.25f, _escortPathLength));
+            Vector3 direction = next - position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 0.001f)
+            {
+                continue;
+            }
+
+            GameObject arrow = new($"RouteArrow_{_routeArrowRenderers.Count + 1:00}");
+            arrow.transform.SetParent(_routeArrowRoot.transform, false);
+            arrow.transform.position = position + Vector3.up * 0.035f;
+            arrow.transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            arrow.transform.localScale = Vector3.one * 0.85f;
+            arrow.AddComponent<MeshFilter>().sharedMesh = _routeArrowMesh;
+            MeshRenderer renderer = arrow.AddComponent<MeshRenderer>();
+            RuntimeRendererUtility.ConfigureMesh(renderer, new Color(1f, 0.72f, 0.18f, 0.18f));
+            _routeArrowRenderers.Add(renderer);
+            _routeArrowDistances.Add(distance);
+        }
+    }
+
+    private void UpdateRouteArrows()
+    {
+        for (int index = 0; index < _routeArrowRenderers.Count; index++)
+        {
+            float flow = Mathf.Repeat(Time.time * 0.9f - _routeArrowDistances[index] * 0.18f, 1f);
+            float pulse = Mathf.SmoothStep(0.08f, 0.28f, 1f - Mathf.Abs(flow * 2f - 1f));
+            RuntimeRendererUtility.SetColor(
+                _routeArrowRenderers[index],
+                new Color(1f, 0.72f, 0.18f, pulse));
+        }
+    }
+
+    private void SetRouteArrowsVisible(bool visible)
+    {
+        if (_routeArrowRoot != null)
+        {
+            _routeArrowRoot.SetActive(visible);
+        }
+    }
+
+    private static Mesh CreateRouteArrowMesh()
+    {
+        Mesh mesh = new() { name = "EscortRouteArrow" };
+        mesh.vertices = new[]
+        {
+            new Vector3(-0.14f, 0f, -0.48f),
+            new Vector3(0.14f, 0f, -0.48f),
+            new Vector3(-0.14f, 0f, 0.12f),
+            new Vector3(0.14f, 0f, 0.12f),
+            new Vector3(-0.36f, 0f, 0.08f),
+            new Vector3(0.36f, 0f, 0.08f),
+            new Vector3(0f, 0f, 0.58f)
+        };
+        mesh.triangles = new[] { 0, 2, 1, 1, 2, 3, 4, 6, 5 };
+        mesh.RecalculateBounds();
+        mesh.RecalculateNormals();
+        return mesh;
     }
 
     private float GetEscortPathLength()
@@ -344,10 +425,18 @@ public class WaveRuntimeController : MonoBehaviour
         }
 
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
-        string text = Phase == FirstArenaPhase.Escort
-            ? $"ЭСКОРТ ВАГОНЕТКИ  {EscortProgress:P0}"
+        string text = Phase is FirstArenaPhase.SecondWave or FirstArenaPhase.Escort
+            ? $"ВОЛНА 2 · СОПРОВОЖДЕНИЕ  {EscortProgress:P0}"
             : $"{GetPhaseLabel(Phase)}  {Mathf.CeilToInt(PhaseRemainingSeconds)} c";
         GUI.Box(new Rect(Screen.width * 0.5f - 140f, 16f, 280f, 30f), text);
+
+        if (_cart != null && (Phase is FirstArenaPhase.SecondWave or FirstArenaPhase.Escort))
+        {
+            Camera camera = Camera.main;
+            Vector3 labelPosition = _cart.transform.position + Vector3.up * 1.2f;
+            ObjectiveGuidanceGui.DrawWorldProgress(camera, labelPosition, $"ВАГОНЕТКА  {EscortProgress:P0}", new Color(1f, 0.76f, 0.2f));
+            ObjectiveGuidanceGui.DrawOffscreenIndicator(camera, labelPosition, "ВАГОНЕТКА", new Color(1f, 0.76f, 0.2f));
+        }
     }
 
     private static string GetPhaseLabel(FirstArenaPhase phase)
@@ -365,5 +454,7 @@ public class WaveRuntimeController : MonoBehaviour
     private void OnDestroy()
     {
         if (_cart != null) Destroy(_cart);
+        if (_routeArrowRoot != null) Destroy(_routeArrowRoot);
+        if (_routeArrowMesh != null) Destroy(_routeArrowMesh);
     }
 }

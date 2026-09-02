@@ -18,6 +18,12 @@ namespace Assets.Scripts.Ecs
         Ranged
     }
 
+    public enum EnemyAttackPresentationKind : byte
+    {
+        MeleeNod,
+        RangedBarrelRoll
+    }
+
     public enum WeaponSlot : byte
     {
         Pistol = 1,
@@ -192,5 +198,13 @@ namespace Assets.Scripts.Ecs
     {
         public float3 Position;
         public int Amount;
+    }
+
+    /// <summary>One-frame request consumed by the GameObject presentation layer.</summary>
+    public struct EnemyAttackPresentationEvent : IComponentData
+    {
+        public Entity Enemy;
+        public float3 Target;
+        public EnemyAttackPresentationKind Kind;
     }
 }

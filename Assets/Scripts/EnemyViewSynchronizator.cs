@@ -47,13 +47,22 @@ namespace Assets.Scripts
                     pooledAgent.isStopped = false;
                 }
 
+                EnsureAttackPresentation(view).ResetForReuse();
+
                 return view;
             }
 
             view = Instantiate(_enemyPrefab, position, Quaternion.identity);
             SetPostion(view, position);
+            EnsureAttackPresentation(view).ResetForReuse();
 
             return view;
+        }
+
+        private static EnemyAttackPresentation EnsureAttackPresentation(GameObject view)
+        {
+            EnemyAttackPresentation presentation = view.GetComponent<EnemyAttackPresentation>();
+            return presentation != null ? presentation : view.AddComponent<EnemyAttackPresentation>();
         }
 
         private void SetPostion(GameObject view, Vector3 position)
@@ -113,6 +122,7 @@ namespace Assets.Scripts
         {
             if(_views.Remove(enemy, out GameObject view))
             {
+                EnsureAttackPresentation(view).ResetForReuse();
                 var agent = view.GetComponent<NavMeshAgent>();
                 if (agent.isOnNavMesh)
                 {
@@ -132,6 +142,7 @@ namespace Assets.Scripts
             }
 
             NavMeshAgent agent = view.GetComponent<NavMeshAgent>();
+            EnsureAttackPresentation(view).ResetForReuse();
             if (agent != null && agent.isActiveAndEnabled)
             {
                 if (agent.isOnNavMesh)
@@ -141,6 +152,17 @@ namespace Assets.Scripts
                 agent.isStopped = true;
             }
             StartCoroutine(FadeView(view, Mathf.Max(0.05f, seconds)));
+        }
+
+        public void PlayAttackGesture(
+            Entity enemy,
+            EnemyAttackPresentationKind kind,
+            Vector3 target)
+        {
+            if (_views.TryGetValue(enemy, out GameObject view))
+            {
+                EnsureAttackPresentation(view).Play(kind, target);
+            }
         }
 
         private IEnumerator FadeView(GameObject view, float seconds)

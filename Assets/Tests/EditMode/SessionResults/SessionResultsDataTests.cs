@@ -144,6 +144,51 @@ namespace LogoSurvivor.SessionResults.Tests
         }
 
         [Test]
+        public void PauseFromResult_ContinuesBackToResult()
+        {
+            SessionShellStateMachine shell = new();
+            shell.StartGame();
+            shell.ShowResult();
+
+            Assert.That(shell.Pause(), Is.True);
+            Assert.That(shell.IsPauseLayerActive, Is.True);
+            Assert.That(shell.Continue(), Is.True);
+            Assert.That(shell.Current, Is.EqualTo(SessionShellState.Result));
+            Assert.That(shell.IsPauseLayerActive, Is.False);
+        }
+
+        [Test]
+        public void DevelopmentPages_ReturnOneLevelAtATime()
+        {
+            SessionShellStateMachine shell = new();
+            shell.StartGame();
+            shell.Pause();
+
+            Assert.That(shell.OpenDevelopmentHub(), Is.True);
+            Assert.That(shell.OpenDevelopmentLog(), Is.True);
+            Assert.That(shell.CancelOverlay(), Is.True);
+            Assert.That(shell.Current, Is.EqualTo(SessionShellState.DevelopmentHub));
+            Assert.That(shell.CancelOverlay(), Is.True);
+            Assert.That(shell.Current, Is.EqualTo(SessionShellState.Pause));
+            Assert.That(shell.IsPauseLayerActive, Is.True);
+        }
+
+        [Test]
+        public void ResetToStart_ClearsPauseNavigation()
+        {
+            SessionShellStateMachine shell = new();
+            shell.StartGame();
+            shell.Pause();
+            shell.OpenDevelopmentHub();
+
+            shell.ResetToStart();
+
+            Assert.That(shell.Current, Is.EqualTo(SessionShellState.Start));
+            Assert.That(shell.IsPauseLayerActive, Is.False);
+            Assert.That(shell.CancelOverlay(), Is.False);
+        }
+
+        [Test]
         public void ResultExpandedCardAndExit_ReturnToResult()
         {
             SessionShellStateMachine shell = new();

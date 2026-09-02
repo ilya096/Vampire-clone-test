@@ -4,9 +4,9 @@ using Unity.Entities;
 using UnityEngine;
 
 /// <summary>
-/// Runs the two approved timed waves in arenas R and O. It reuses the
-/// first-arena timing and spawn-pressure settings, preserves all living
-/// enemies between phases, and hands the final objective back to zoning.
+/// Runs a timed first wave in arenas R and O, an objective-driven capture wave
+/// in R, and the approved timed second wave in O. It preserves all living
+/// enemies between phases and hands route transitions back to zoning.
 /// </summary>
 public sealed class MultiArenaWaveController : MonoBehaviour
 {
@@ -47,6 +47,8 @@ public sealed class MultiArenaWaveController : MonoBehaviour
     public event Action<ArenaId> ArenaWavesCompleted;
     public event Action<ArenaId, int> WaveCompleted;
 
+    public static bool IsObjectiveDrivenSecondWave(ArenaId arena) => arena is ArenaId.P or ArenaId.R;
+
     public void Initialize(
         World world,
         Entity playerEntity,
@@ -61,6 +63,7 @@ public sealed class MultiArenaWaveController : MonoBehaviour
         _spawnConfigQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnConfigComponent>());
         _spawnStateQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<EnemySpawnStateComponent>());
         _arenaRoute.ArenaEntered += HandleArenaEntered;
+        _arenaRoute.CaptureObjectiveCompleted += HandleCaptureObjectiveCompleted;
         _arenaRCompletedWaveMask = 0;
         _arenaOCompletedWaveMask = 0;
         _initialized = true;
@@ -90,8 +93,12 @@ public sealed class MultiArenaWaveController : MonoBehaviour
                 EnterPhase(ArenaWavePhase.SecondWave);
                 break;
             case ArenaWavePhase.SecondWave:
+                if (ActiveArena == ArenaId.R)
+                {
+                    return _arenaRoute.CompleteCaptureObjectiveForDebug();
+                }
                 PublishWaveCompleted(ActiveArena, 2);
-                CompleteSequence();
+                CompleteTimedSequence();
                 break;
         }
 
@@ -143,6 +150,11 @@ public sealed class MultiArenaWaveController : MonoBehaviour
             return;
         }
 
+        if (ActiveArena == ArenaId.R && Phase == ArenaWavePhase.SecondWave)
+        {
+            return;
+        }
+
         _phaseRemaining -= Time.deltaTime;
         if (_phaseRemaining > 0f)
         {
@@ -163,7 +175,7 @@ public sealed class MultiArenaWaveController : MonoBehaviour
                 break;
             case ArenaWavePhase.SecondWave:
                 PublishWaveCompleted(ActiveArena, 2);
-                CompleteSequence();
+                CompleteTimedSequence();
                 break;
         }
     }
@@ -199,31 +211,47 @@ public sealed class MultiArenaWaveController : MonoBehaviour
             case ArenaWavePhase.Preparation:
                 _phaseRemaining = _waveSettings.PreparationSeconds;
                 SetSpawning(false, 0f, 0);
+                GameStateTransitionBanner.Show($"АРЕНА {GetArenaLabel()} · ПОДГОТОВКА");
                 break;
             case ArenaWavePhase.FirstWave:
                 _phaseRemaining = _waveSettings.FirstWaveSeconds;
                 SetSpawning(true, _waveSettings.FirstWaveSpawnInterval, _waveSettings.FirstWaveMaxEnemies);
+                GameStateTransitionBanner.Show($"АРЕНА {GetArenaLabel()} · ПЕРВАЯ ВОЛНА");
                 break;
             case ArenaWavePhase.Intermission:
                 _phaseRemaining = _waveSettings.IntermissionSeconds;
                 SetSpawning(false, 0f, 0);
+                GameStateTransitionBanner.Show($"АРЕНА {GetArenaLabel()} · ПЕРЕДЫШКА");
                 break;
             case ArenaWavePhase.SecondWave:
-                _phaseRemaining = _waveSettings.SecondWaveSeconds;
+                _phaseRemaining = ActiveArena == ArenaId.R ? 0f : _waveSettings.SecondWaveSeconds;
                 SetSpawning(true, _waveSettings.SecondWaveSpawnInterval, _waveSettings.SecondWaveMaxEnemies);
+                if (ActiveArena == ArenaId.R)
+                {
+                    if (_arenaRoute.BeginCaptureObjective() == false)
+                    {
+                        Phase = ArenaWavePhase.ContractFailed;
+                        SetSpawning(false, 0f, 0);
+                        Debug.LogError("Arena R rejected the second-wave capture contract.");
+                        return;
+                    }
+                    GameStateTransitionBanner.Show("ВТОРАЯ ВОЛНА: ЗАХВАТ ТОЧЕК");
+                }
+                else
+                {
+                    GameStateTransitionBanner.Show("АРЕНА О · ВТОРАЯ ВОЛНА");
+                }
                 break;
         }
     }
 
-    private void CompleteSequence()
+    private void CompleteTimedSequence()
     {
         _phaseRemaining = 0f;
         SetSpawning(false, 0f, 0);
         Phase = ArenaWavePhase.ObjectiveStarted;
 
-        bool contractAccepted = ActiveArena == ArenaId.R
-            ? _arenaRoute.BeginCaptureObjective()
-            : _arenaRoute.OpenBossArena();
+        bool contractAccepted = ActiveArena == ArenaId.O && _arenaRoute.OpenBossArena();
 
         if (contractAccepted == false)
         {
@@ -234,6 +262,22 @@ public sealed class MultiArenaWaveController : MonoBehaviour
 
         ArenaWavesCompleted?.Invoke(ActiveArena);
     }
+
+    private void HandleCaptureObjectiveCompleted()
+    {
+        if (ActiveArena != ArenaId.R || Phase != ArenaWavePhase.SecondWave)
+        {
+            return;
+        }
+
+        PublishWaveCompleted(ArenaId.R, 2);
+        _phaseRemaining = 0f;
+        SetSpawning(false, 0f, 0);
+        Phase = ArenaWavePhase.ObjectiveStarted;
+        ArenaWavesCompleted?.Invoke(ArenaId.R);
+    }
+
+    private string GetArenaLabel() => ActiveArena == ArenaId.R ? "Р" : "О";
 
     private void SetSpawning(bool enabled, float interval, int maxEnemies)
     {
@@ -266,7 +310,7 @@ public sealed class MultiArenaWaveController : MonoBehaviour
         }
 
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
-        string arenaLabel = ActiveArena == ArenaId.R ? "Р" : "О";
+        string arenaLabel = GetArenaLabel();
         string phaseLabel = Phase switch
         {
             ArenaWavePhase.Preparation => "ПОДГОТОВКА",
@@ -275,9 +319,16 @@ public sealed class MultiArenaWaveController : MonoBehaviour
             ArenaWavePhase.SecondWave => "ВОЛНА 2",
             _ => string.Empty
         };
+        string suffix = ActiveArena == ArenaId.R && Phase == ArenaWavePhase.SecondWave
+            ? string.Empty
+            : $"  {Mathf.CeilToInt(PhaseRemainingSeconds)} c";
+        if (ActiveArena == ArenaId.R && Phase == ArenaWavePhase.SecondWave)
+        {
+            phaseLabel = "ВОЛНА 2 · ЗАХВАТ ТОЧЕК";
+        }
         GUI.Box(
             new Rect(Screen.width * 0.5f - 160f, 16f, 320f, 30f),
-            $"АРЕНА {arenaLabel} · {phaseLabel}  {Mathf.CeilToInt(PhaseRemainingSeconds)} c");
+            $"АРЕНА {arenaLabel} · {phaseLabel}{suffix}");
     }
 
     private void OnDestroy()
@@ -285,6 +336,7 @@ public sealed class MultiArenaWaveController : MonoBehaviour
         if (_arenaRoute != null)
         {
             _arenaRoute.ArenaEntered -= HandleArenaEntered;
+            _arenaRoute.CaptureObjectiveCompleted -= HandleCaptureObjectiveCompleted;
         }
     }
 }

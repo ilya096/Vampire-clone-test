@@ -602,6 +602,9 @@ public static class ArenaRouteSceneSetup
             ArenaCapturePoint point = testObject.AddComponent<ArenaCapturePoint>();
             point.Configure(1f, 5f, 10f);
             point.ResetProgress();
+            point.Tick(Vector3.zero, 5f);
+            bool inactiveBeforeSecondWave = Mathf.Approximately(point.Progress, 0f) && point.IsObjectiveActive == false;
+            point.ActivateObjective();
             point.Tick(Vector3.zero, 2.5f);
             bool halfCaptured = Mathf.Approximately(point.Progress, 0.5f) && point.IsCompleted == false;
             point.Tick(Vector3.right * 2f, 5f);
@@ -609,13 +612,17 @@ public static class ArenaRouteSceneSetup
             point.Tick(Vector3.zero, 5f);
             point.Tick(Vector3.right * 2f, 20f);
             bool completionLocked = Mathf.Approximately(point.Progress, 1f) && point.IsCompleted;
-            if (halfCaptured && rolledBack && completionLocked)
+            bool objectiveRulesValid = MultiArenaWaveController.IsObjectiveDrivenSecondWave(ArenaId.P)
+                && MultiArenaWaveController.IsObjectiveDrivenSecondWave(ArenaId.R)
+                && MultiArenaWaveController.IsObjectiveDrivenSecondWave(ArenaId.O) == false;
+            if (inactiveBeforeSecondWave && halfCaptured && rolledBack && completionLocked && objectiveRulesValid)
             {
-                Debug.Log("Capture progress behavior valid: 5s capture, 10s rollback, completed state locked.");
+                Debug.Log("Capture progress behavior valid: inactive before wave 2, 5s capture, 10s rollback, completed state locked; P/R objective-driven and O timed.");
             }
             else
             {
-                Debug.LogError($"Capture progress behavior invalid: half={halfCaptured}, rollback={rolledBack}, locked={completionLocked}.");
+                throw new InvalidOperationException(
+                    $"Capture progress behavior invalid: inactive={inactiveBeforeSecondWave}, half={halfCaptured}, rollback={rolledBack}, locked={completionLocked}, objectiveRules={objectiveRulesValid}.");
             }
         }
         finally

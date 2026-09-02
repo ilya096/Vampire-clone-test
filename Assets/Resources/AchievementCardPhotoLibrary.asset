@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b72f39de2ec14f15803559e29f626028, type: 3}
+  m_Name: AchievementCardPhotoLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::LogoSurvivor.AchievementCards.AchievementCardPhotoLibrary
+  _entries:
+  - _cardId: direction_game_design_guild
+    _texture: {fileID: 2800000, guid: 1dedf721d42eb924ca6f7c12504e0cee, type: 3}
+  - _cardId: stage_preproduction
+    _texture: {fileID: 2800000, guid: cca02a7a4953df548b9512d38c886a2d, type: 3}
+  - _cardId: direction_art_club
+    _texture: {fileID: 2800000, guid: 141279c57d710ff4bbdeecf9a8e8bdfa, type: 3}
+  - _cardId: stage_production
+    _texture: {fileID: 2800000, guid: 4f8ec83e427bdc94eb8448fa5a7c9f87, type: 3}
+  - _cardId: direction_programmers_club
+    _texture: {fileID: 2800000, guid: 57e1d5d392f7c5544a77832c7a0ced66, type: 3}
+  - _cardId: stage_release_postproduction
+    _texture: {fileID: 2800000, guid: c9d6d98443f6a784ba89d922567f3e77, type: 3}

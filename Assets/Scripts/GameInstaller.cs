@@ -65,7 +65,7 @@ public class GameInstaller : MonoBehaviour
         {
             _arenaRouteController = gameObject.AddComponent<ArenaRouteController>();
         }
-        _arenaRouteController.Initialize(_world, _playerEntity, _waveRuntimeController, _cameraFollow);
+        _arenaRouteController.Initialize(_world, _playerEntity, _waveRuntimeController);
 
         _multiArenaWaveController = GetComponent<MultiArenaWaveController>();
         if (_multiArenaWaveController == null)
@@ -109,9 +109,12 @@ public class GameInstaller : MonoBehaviour
             _playerEntity,
             _waveRuntimeController,
             _multiArenaWaveController,
+            _arenaRouteController,
+            _cameraFollow,
             _playerProgressionController,
             _combatRuntimeController,
-            _finalBossRuntimeController);
+            _finalBossRuntimeController,
+            _debugAdminPanel);
 
         _player.Initialize(_world, _playerEntity);
         _cameraFollow.SetPlayer(_player.transform);

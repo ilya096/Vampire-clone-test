@@ -22,29 +22,24 @@ public sealed class ArenaRouteController : MonoBehaviour
     }
 
     [SerializeField] private ArenaRouteLayout _layout;
-    [SerializeField] private float _overviewSeconds = 1.6f;
-    [SerializeField] private float _overviewZoomMultiplier = 1.45f;
 
     private World _world;
     private EntityManager _entityManager;
     private Entity _playerEntity;
     private WaveRuntimeController _firstArenaWaves;
-    private CameraFollow _cameraFollow;
     private bool _initialized;
-    private string _announcement = string.Empty;
-    private float _announcementUntil;
 
     public RoutePhase Phase { get; private set; } = RoutePhase.FirstArena;
     public ArenaRouteLayout Layout => _layout;
     public event Action<ArenaId> ArenaEntered;
     public event Action CaptureObjectiveCompleted;
     public event Action BossArenaOpened;
+    public event Action<ArenaCameraOverviewShotId> OverviewRequested;
 
     public void Initialize(
         World world,
         Entity playerEntity,
-        WaveRuntimeController firstArenaWaves,
-        CameraFollow cameraFollow)
+        WaveRuntimeController firstArenaWaves)
     {
         _layout = _layout != null ? _layout : FindAnyObjectByType<ArenaRouteLayout>();
         if (_layout == null)
@@ -65,7 +60,6 @@ public sealed class ArenaRouteController : MonoBehaviour
         _entityManager = world.EntityManager;
         _playerEntity = playerEntity;
         _firstArenaWaves = firstArenaWaves;
-        _cameraFollow = cameraFollow;
         _firstArenaWaves.FirstArenaCompleted += HandleFirstArenaCompleted;
         ResetRoute();
         _initialized = true;
@@ -86,11 +80,9 @@ public sealed class ArenaRouteController : MonoBehaviour
         {
             capturePoint.ResetProgress();
         }
-        _announcement = string.Empty;
-        _announcementUntil = 0f;
     }
 
-    /// <summary>Called by enemy_waves after both waves in arena R.</summary>
+    /// <summary>Called by enemy_waves when the objective-driven second wave starts in arena R.</summary>
     public bool BeginCaptureObjective()
     {
         if (Phase != RoutePhase.WaitingForRWaves)
@@ -99,7 +91,26 @@ public sealed class ArenaRouteController : MonoBehaviour
         }
 
         Phase = RoutePhase.CapturingR;
+        foreach (ArenaCapturePoint capturePoint in _layout.CapturePointsR)
+        {
+            capturePoint.ActivateObjective();
+        }
         Announce("ЗАХВАТИТЕ ТРИ ТОЧКИ", 2.5f);
+        return true;
+    }
+
+    public bool CompleteCaptureObjectiveForDebug()
+    {
+        if (Phase != RoutePhase.CapturingR)
+        {
+            return false;
+        }
+
+        foreach (ArenaCapturePoint capturePoint in _layout.CapturePointsR)
+        {
+            capturePoint.CompleteForDebug();
+        }
+        CompleteCaptureObjective();
         return true;
     }
 
@@ -171,7 +182,7 @@ public sealed class ArenaRouteController : MonoBehaviour
         _layout.GatePToR.SetOpen(true);
         Phase = RoutePhase.MovingToR;
         Announce("ПРОХОД В АРЕНУ Р ОТКРЫТ", 2.5f);
-        PlayOverview(_layout.ArenaR.transform.position);
+        OverviewRequested?.Invoke(ArenaCameraOverviewShotId.TransitionPToR);
     }
 
     private void UpdateCaptureObjective(Vector3 playerPosition)
@@ -188,25 +199,21 @@ public sealed class ArenaRouteController : MonoBehaviour
             return;
         }
 
+        CompleteCaptureObjective();
+    }
+
+    private void CompleteCaptureObjective()
+    {
         _layout.GateRToO.SetOpen(true);
         Phase = RoutePhase.MovingToO;
         Announce("ПРОХОД В АРЕНУ О ОТКРЫТ", 2.5f);
-        PlayOverview(_layout.ArenaO.transform.position);
         CaptureObjectiveCompleted?.Invoke();
-    }
-
-    private void PlayOverview(Vector3 target)
-    {
-        if (_cameraFollow != null)
-        {
-            _cameraFollow.PlayOverview(target, _overviewSeconds, _overviewZoomMultiplier);
-        }
+        OverviewRequested?.Invoke(ArenaCameraOverviewShotId.TransitionRToO);
     }
 
     private void Announce(string text, float seconds)
     {
-        _announcement = text;
-        _announcementUntil = Time.unscaledTime + seconds;
+        GameStateTransitionBanner.Show(text);
     }
 
     private void OnGUI()
@@ -230,13 +237,18 @@ public sealed class ArenaRouteController : MonoBehaviour
                 ArenaCapturePoint point = _layout.CapturePointsR[index];
                 string status = point.IsCompleted ? "ГОТОВО" : $"{point.Progress:P0}";
                 GUI.Box(new Rect(Screen.width * 0.5f - 150f + index * 105f, 88f, 90f, 28f), $"{index + 1}: {status}");
+                if (point.IsCompleted == false)
+                {
+                    ObjectiveGuidanceGui.DrawOffscreenIndicator(
+                        Camera.main,
+                        point.GuidanceWorldPosition,
+                        $"ТОЧКА {index + 1}",
+                        new Color(0.35f, 1f, 0.48f),
+                        (index - 1) * 24f);
+                }
             }
         }
 
-        if (Time.unscaledTime < _announcementUntil)
-        {
-            GUI.Box(new Rect(Screen.width * 0.5f - 220f, Screen.height * 0.28f, 440f, 44f), _announcement);
-        }
     }
 
     private string GetObjectiveText()
