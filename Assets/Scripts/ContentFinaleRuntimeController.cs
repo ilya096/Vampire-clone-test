@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Assets.Scripts.Ecs;
 using LogoSurvivor.AchievementCards;
+using LogoSurvivor.ClassLoadout;
 using LogoSurvivor.QrContent;
 using LogoSurvivor.SessionResults;
 using Unity.Entities;
@@ -38,6 +39,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     private DebugAdminPanel _debugAdmin;
     private AchievementCardsSession _achievementCards;
     private AchievementCardPhotoLibrary _achievementPhotos;
+    private ClassLoadoutSession _classLoadout;
     private QrContentSnapshot _qrContent;
     private readonly SessionResultsCoordinator _results = new();
     private readonly SessionShellStateMachine _shell = new();
@@ -80,6 +82,8 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         _achievementCards = new AchievementCardsSession(
             AchievementCardsConfig.CreateDefault(),
             AchievementCardsCatalog.CreateDefault());
+        _classLoadout = new ClassLoadoutSession(ClassLoadoutCatalog.CreateDefault());
+        _combat.BindClassLoadout(_classLoadout);
         _achievementPhotos = Resources.Load<AchievementCardPhotoLibrary>(AchievementPhotoLibraryResourcePath);
         if (_achievementPhotos == null)
         {
@@ -94,6 +98,8 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
         _firstArenaWaves.WaveCompleted += HandleFirstArenaWaveCompleted;
         _multiArenaWaves.WaveCompleted += HandleArenaWaveCompleted;
+        _arenaRoute.ArenaEntered += HandleArenaEnteredForLoadout;
+        _arenaRoute.BossArenaOpened += HandleBossSpawnedForLoadout;
         _arenaRoute.OverviewRequested += HandleOverviewRequested;
         _progression.ChoiceClosed += HandleProgressionChoiceClosed;
         _combat.DefeatPublished += HandleDefeatPublished;
@@ -159,15 +165,6 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         bool pausePressed = keyboard.escapeKey.wasPressedThisFrame
             || keyboard.f10Key.wasPressedThisFrame;
 
-        if (_achievementOverlay == AchievementOverlay.Intro)
-        {
-            if (confirmPressed)
-            {
-                CloseIntro();
-            }
-            return;
-        }
-
         if (_shell.IsPauseLayerActive)
         {
             if (_shell.Current == SessionShellState.Pause
@@ -196,6 +193,33 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         if (pausePressed && _shell.Current is SessionShellState.Gameplay or SessionShellState.Result)
         {
             OpenPause();
+            return;
+        }
+
+        if (_shell.Current == SessionShellState.Gameplay
+            && _classLoadout.HasMandatoryChoice)
+        {
+            int optionIndex = GetLoadoutChoiceHotkey(keyboard);
+            if (optionIndex > 0)
+            {
+                if (_classLoadout.ClassChoicePending)
+                {
+                    TrySelectClass((PlayerClassId)optionIndex);
+                }
+                else
+                {
+                    TrySelectLoadoutWeapon(optionIndex);
+                }
+            }
+            return;
+        }
+
+        if (_achievementOverlay == AchievementOverlay.Intro)
+        {
+            if (confirmPressed)
+            {
+                CloseIntro();
+            }
             return;
         }
 
@@ -271,6 +295,38 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         }
     }
 
+    private void HandleArenaEnteredForLoadout(ArenaId arena)
+    {
+        LoadoutWeaponSlot? slot = arena switch
+        {
+            ArenaId.R => LoadoutWeaponSlot.Slot2,
+            ArenaId.O => LoadoutWeaponSlot.Slot3,
+            _ => null
+        };
+
+        if (slot.HasValue)
+        {
+            UnlockLoadoutSlot(slot.Value);
+        }
+    }
+
+    private void HandleBossSpawnedForLoadout()
+    {
+        UnlockLoadoutSlot(LoadoutWeaponSlot.Slot4);
+    }
+
+    private void UnlockLoadoutSlot(LoadoutWeaponSlot slot)
+    {
+        ClassLoadoutOperationResult result = _classLoadout.TryUnlockSlot(slot);
+        Debug.Log($"{LogPrefix} {result.DiagnosticMessage}");
+        if (result.ChangedState || _classLoadout.HasMandatoryChoice)
+        {
+            _progression.ExternalModalActive = true;
+            SetGameplayPresentation(false);
+            PauseGameplay();
+        }
+    }
+
     private void HandleProgressionChoiceClosed()
     {
         if (_outcomePending == false)
@@ -288,6 +344,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
         CancelOverviewForResult();
         _outcomePending = true;
+        _classLoadout.TryFinish();
         _achievementCards.TryFinish(AchievementSessionState.Defeat);
         _combat.HideDefeatPanel();
         _progression.ExternalModalActive = true;
@@ -308,6 +365,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
         CancelOverviewForResult();
         _outcomePending = true;
+        _classLoadout.TryFinish();
         _achievementCards.TryFinish(AchievementSessionState.Victory);
         _progression.ExternalModalActive = true;
         SetGameplayPresentation(false);
@@ -369,10 +427,14 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         }
 
         _achievementCards.Reset();
+        _classLoadout.Reset();
         _results.Reset();
         _outcomePending = false;
         _pendingOverview = null;
         _overviewActive = false;
+        _achievementOverlay = AchievementOverlay.None;
+        _presentedCard = null;
+        _expandedCard = null;
         _cameraFollow?.SetPauseOverlayActive(false);
         _resultScroll = Vector2.zero;
         if (Screen.fullScreen != _fullscreenPreference)
@@ -383,16 +445,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         SetGameplayPresentation(false);
         PauseGameplay();
 
-        if (_achievementCards.IntroPending)
-        {
-            _achievementOverlay = AchievementOverlay.Intro;
-            _overlayElapsedSeconds = 0f;
-        }
-        else
-        {
-            RegisterPendingOverview(ArenaCameraOverviewShotId.IntroOverview);
-            ResumeGameplayAfterModalQueue();
-        }
+        ResumeGameplayAfterModalQueue();
     }
 
     private void CloseIntro()
@@ -410,7 +463,9 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
     private void TryPresentNextAchievementCard()
     {
-        if (_shell.Current != SessionShellState.Gameplay || _outcomePending)
+        if (_shell.Current != SessionShellState.Gameplay
+            || _outcomePending
+            || _classLoadout.HasMandatoryChoice)
         {
             return;
         }
@@ -450,11 +505,48 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     {
         if (_shell.Current != SessionShellState.Gameplay
             || _outcomePending
-            || _overviewActive
-            || _achievementOverlay != AchievementOverlay.None
-            || _progression.ChoiceOpen
-            || _progression.HasPendingChoice)
+            || _overviewActive)
         {
+            return;
+        }
+
+        if (_classLoadout.HasMandatoryChoice)
+        {
+            _progression.ExternalModalActive = true;
+            SetGameplayPresentation(false);
+            PauseGameplay();
+            return;
+        }
+
+        if (_achievementCards.IntroPending
+            && _achievementOverlay == AchievementOverlay.None)
+        {
+            _achievementOverlay = AchievementOverlay.Intro;
+            _overlayElapsedSeconds = 0f;
+            _progression.ExternalModalActive = true;
+            SetGameplayPresentation(false);
+            PauseGameplay();
+            return;
+        }
+
+        if (_achievementOverlay != AchievementOverlay.None)
+        {
+            return;
+        }
+
+        if (_progression.ChoiceOpen)
+        {
+            _progression.ExternalModalActive = false;
+            SetGameplayPresentation(true);
+            PauseGameplay();
+            return;
+        }
+
+        if (_progression.HasPendingChoice)
+        {
+            _progression.ExternalModalActive = false;
+            SetGameplayPresentation(true);
+            Time.timeScale = 1f;
             return;
         }
 
@@ -580,7 +672,15 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
             return;
         }
 
-        if (_achievementOverlay == AchievementOverlay.Card || _overviewActive)
+        if (_classLoadout.HasMandatoryChoice)
+        {
+            _progression.ExternalModalActive = true;
+            SetGameplayPresentation(false);
+            PauseGameplay();
+            return;
+        }
+
+        if (_achievementOverlay != AchievementOverlay.None || _overviewActive)
         {
             _progression.ExternalModalActive = true;
             SetGameplayPresentation(false);
@@ -643,6 +743,7 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
 
     private void ConfirmExit()
     {
+        _classLoadout.Reset();
         _achievementCards.Reset();
         _results.Reset();
         Time.timeScale = 1f;
@@ -676,7 +777,16 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         RuntimeGuiPresentation.ApplyFontToCurrentSkin();
         GUI.depth = -1000;
 
-        if (_achievementOverlay == AchievementOverlay.Intro)
+        if (_shell.IsPauseLayerActive == false
+            && _shell.Current == SessionShellState.Gameplay
+            && _classLoadout.HasMandatoryChoice)
+        {
+            DrawClassLoadoutChoice();
+            return;
+        }
+
+        if (_shell.IsPauseLayerActive == false
+            && _achievementOverlay == AchievementOverlay.Intro)
         {
             DrawAchievementIntro();
             return;
@@ -777,6 +887,160 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
         {
             CloseIntro();
         }
+    }
+
+    private void DrawClassLoadoutChoice()
+    {
+        if (_classLoadout.ClassChoicePending)
+        {
+            DrawClassChoice();
+            return;
+        }
+
+        if (_classLoadout.PendingSlot.HasValue)
+        {
+            DrawWeaponChoice(_classLoadout.PendingSlot.Value, _classLoadout.PendingChoices);
+        }
+    }
+
+    private void DrawClassChoice()
+    {
+        DrawBackdrop();
+        float panelWidth = Mathf.Min(900f, Screen.width - 30f);
+        Rect panel = CenteredPanel(panelWidth, Mathf.Min(430f, Screen.height - 30f));
+        GUI.Box(panel, "ВЫБЕРИТЕ ПРОФЕССИЮ");
+        GUI.Label(
+            new Rect(panel.x + 40f, panel.y + 52f, panel.width - 80f, 55f),
+            "Класс определяет четыре тематических набора оружейных карточек на эту сессию.");
+
+        IReadOnlyList<PlayerClassDefinition> classes = _classLoadout.Catalog.Classes;
+        bool useCompactLayout = panel.width < 620f || panel.height < 390f;
+        float gap = useCompactLayout ? 8f : 12f;
+        float buttonWidth = useCompactLayout
+            ? panel.width - 60f
+            : (panel.width - 80f - gap * 2f) / 3f;
+        float buttonHeight = useCompactLayout
+            ? Mathf.Max(44f, (panel.height - 180f - gap * 2f) / 3f)
+            : Mathf.Min(190f, panel.yMax - 75f - (panel.y + 125f));
+        for (int index = 0; index < classes.Count; index++)
+        {
+            PlayerClassDefinition definition = classes[index];
+            Rect button = new(
+                useCompactLayout ? panel.x + 30f : panel.x + 40f + index * (buttonWidth + gap),
+                useCompactLayout ? panel.y + 112f + index * (buttonHeight + gap) : panel.y + 125f,
+                buttonWidth,
+                buttonHeight);
+            Color previousColor = GUI.color;
+            GUI.color = GetClassColor(definition.Id);
+            string label = useCompactLayout
+                ? $"{index + 1} · {definition.DisplayName} · 4 слота"
+                : $"{index + 1}\n\n{definition.DisplayName}\n\n4 оружейных слота";
+            if (GUI.Button(button, label))
+            {
+                TrySelectClass(definition.Id);
+            }
+            GUI.color = previousColor;
+        }
+
+        GUI.Label(
+            new Rect(panel.x + 40f, panel.yMax - 52f, panel.width - 80f, 30f),
+            "Выбор действует до конца сессии · клавиши 1–3");
+    }
+
+    private void DrawWeaponChoice(
+        LoadoutWeaponSlot slot,
+        IReadOnlyList<LoadoutWeaponDefinition> choices)
+    {
+        DrawBackdrop();
+        float panelWidth = Mathf.Min(900f, Screen.width - 30f);
+        Rect panel = CenteredPanel(panelWidth, Mathf.Min(430f, Screen.height - 30f));
+        GUI.Box(panel, $"{_classLoadout.SelectedClass.DisplayName.ToUpperInvariant()} · СЛОТ {(int)slot}");
+        GUI.Label(
+            new Rect(panel.x + 40f, panel.y + 52f, panel.width - 80f, 55f),
+            $"{GetMilestoneLabel(slot)}. Выберите одну из трёх фиксированных карточек.");
+
+        bool useCompactLayout = panel.width < 620f || panel.height < 390f;
+        float gap = useCompactLayout ? 8f : 12f;
+        float buttonWidth = useCompactLayout
+            ? panel.width - 60f
+            : (panel.width - 80f - gap * 2f) / 3f;
+        float buttonHeight = useCompactLayout
+            ? Mathf.Max(44f, (panel.height - 180f - gap * 2f) / 3f)
+            : Mathf.Min(190f, panel.yMax - 75f - (panel.y + 125f));
+        for (int index = 0; index < choices.Count; index++)
+        {
+            LoadoutWeaponDefinition choice = choices[index];
+            Rect button = new(
+                useCompactLayout ? panel.x + 30f : panel.x + 40f + index * (buttonWidth + gap),
+                useCompactLayout ? panel.y + 112f + index * (buttonHeight + gap) : panel.y + 125f,
+                buttonWidth,
+                buttonHeight);
+            Color previousColor = GUI.color;
+            GUI.color = GetClassColor(choice.PlayerClass);
+            string label = useCompactLayout
+                ? $"{index + 1} · {choice.DisplayName} · УРОВЕНЬ 0 / 9"
+                : $"{index + 1}\n\n{choice.DisplayName}\n\nУРОВЕНЬ 0 / 9";
+            if (GUI.Button(button, label))
+            {
+                TrySelectLoadoutWeapon(index + 1);
+            }
+            GUI.color = previousColor;
+        }
+
+        GUI.Label(
+            new Rect(panel.x + 40f, panel.yMax - 52f, panel.width - 80f, 30f),
+            "Выбор нельзя заменить до конца сессии · клавиши 1–3");
+    }
+
+    private void TrySelectClass(PlayerClassId playerClass)
+    {
+        ClassLoadoutOperationResult result = _classLoadout.TrySelectClass(playerClass);
+        Debug.Log($"{LogPrefix} {result.DiagnosticMessage}");
+        if (result.ChangedState)
+        {
+            ResumeGameplayAfterModalQueue();
+        }
+    }
+
+    private void TrySelectLoadoutWeapon(int optionIndex)
+    {
+        ClassLoadoutOperationResult result = _classLoadout.TrySelectPendingWeapon(optionIndex);
+        Debug.Log($"{LogPrefix} {result.DiagnosticMessage}");
+        if (result.ChangedState)
+        {
+            ResumeGameplayAfterModalQueue();
+        }
+    }
+
+    private static int GetLoadoutChoiceHotkey(Keyboard keyboard)
+    {
+        if (keyboard.digit1Key.wasPressedThisFrame || keyboard.numpad1Key.wasPressedThisFrame) return 1;
+        if (keyboard.digit2Key.wasPressedThisFrame || keyboard.numpad2Key.wasPressedThisFrame) return 2;
+        if (keyboard.digit3Key.wasPressedThisFrame || keyboard.numpad3Key.wasPressedThisFrame) return 3;
+        return 0;
+    }
+
+    private static Color GetClassColor(PlayerClassId playerClass)
+    {
+        return playerClass switch
+        {
+            PlayerClassId.GameDesigner => new Color(0.35f, 0.78f, 0.42f, 1f),
+            PlayerClassId.Artist => new Color(0.78f, 0.42f, 0.92f, 1f),
+            PlayerClassId.Programmer => new Color(0.25f, 0.72f, 0.92f, 1f),
+            _ => Color.white
+        };
+    }
+
+    private static string GetMilestoneLabel(LoadoutWeaponSlot slot)
+    {
+        return slot switch
+        {
+            LoadoutWeaponSlot.Slot1 => "СТАРТ СЕССИИ",
+            LoadoutWeaponSlot.Slot2 => "АРЕНА Р ОТКРЫТА",
+            LoadoutWeaponSlot.Slot3 => "АРЕНА О ОТКРЫТА",
+            LoadoutWeaponSlot.Slot4 => "БОСС ПОЯВИЛСЯ",
+            _ => "НОВЫЙ ЭТАП"
+        };
     }
 
     private void DrawAchievementCard(AchievementCardDefinition card, bool allowContinue)
@@ -1091,7 +1355,12 @@ public sealed class ContentFinaleRuntimeController : MonoBehaviour
     {
         if (_firstArenaWaves != null) _firstArenaWaves.WaveCompleted -= HandleFirstArenaWaveCompleted;
         if (_multiArenaWaves != null) _multiArenaWaves.WaveCompleted -= HandleArenaWaveCompleted;
-        if (_arenaRoute != null) _arenaRoute.OverviewRequested -= HandleOverviewRequested;
+        if (_arenaRoute != null)
+        {
+            _arenaRoute.ArenaEntered -= HandleArenaEnteredForLoadout;
+            _arenaRoute.BossArenaOpened -= HandleBossSpawnedForLoadout;
+            _arenaRoute.OverviewRequested -= HandleOverviewRequested;
+        }
         if (_progression != null) _progression.ChoiceClosed -= HandleProgressionChoiceClosed;
         if (_combat != null) _combat.DefeatPublished -= HandleDefeatPublished;
         if (_boss != null)

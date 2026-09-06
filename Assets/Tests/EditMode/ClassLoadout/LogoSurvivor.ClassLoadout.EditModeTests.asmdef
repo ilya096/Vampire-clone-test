@@ -1,0 +1,21 @@
+{
+  "name": "LogoSurvivor.ClassLoadout.EditModeTests",
+  "rootNamespace": "LogoSurvivor.ClassLoadout.Tests",
+  "references": [
+    "LogoSurvivor.ClassLoadout"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

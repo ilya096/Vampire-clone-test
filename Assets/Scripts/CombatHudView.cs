@@ -1,3 +1,4 @@
+using LogoSurvivor.ClassLoadout;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,6 +19,7 @@ public class CombatHudView : MonoBehaviour
     private int _pistolUpgradeCount;
     private int _machineGunUpgradeCount;
     private bool _hasRuntimeData;
+    private ClassLoadoutSession _classLoadout;
     private GUIStyle _centerLabelStyle;
 
     private void Awake()
@@ -47,6 +49,11 @@ public class CombatHudView : MonoBehaviour
         {
             _aimReticle.position = screenPosition;
         }
+    }
+
+    public void BindClassLoadout(ClassLoadoutSession classLoadout)
+    {
+        _classLoadout = classLoadout;
     }
 
     public void ShowDefeat(bool visible, string reason = null, int experience = 0)
@@ -103,17 +110,79 @@ public class CombatHudView : MonoBehaviour
         float healthY = Screen.height - 148f;
         Rect healthFrame = new(Screen.width * 0.5f - healthWidth * 0.5f, healthY, healthWidth, healthHeight);
         DrawBar(healthFrame, healthFill, new Color(0.88f, 0.08f, 0.08f, 1f));
-        DrawCenteredLabel(healthFrame, $"HP {_health} / {_maxHealth}", 13);
+        string classPrefix = _classLoadout?.SelectedClass != null
+            ? $"{_classLoadout.SelectedClass.DisplayName.ToUpperInvariant()} · "
+            : string.Empty;
+        DrawCenteredLabel(healthFrame, $"{classPrefix}HP {_health} / {_maxHealth}", 13);
 
         const float weaponGap = 6f;
         const float weaponHeight = 48f;
         float weaponWidth = (hudWidth - weaponGap * 3f) / 4f;
         float weaponY = Screen.height - 119f;
         float weaponX = Screen.width * 0.5f - hudWidth * 0.5f;
-        DrawWeaponCard(new Rect(weaponX, weaponY, weaponWidth, weaponHeight), 1, "ПИСТОЛЕТ", _pistolUpgradeCount, _selectedWeapon == 1, false);
-        DrawWeaponCard(new Rect(weaponX + (weaponWidth + weaponGap), weaponY, weaponWidth, weaponHeight), 2, "ПУЛЕМЁТ", _machineGunUpgradeCount, _selectedWeapon == 2, false);
-        DrawWeaponCard(new Rect(weaponX + (weaponWidth + weaponGap) * 2f, weaponY, weaponWidth, weaponHeight), 3, "LOCKED", 0, false, true);
-        DrawWeaponCard(new Rect(weaponX + (weaponWidth + weaponGap) * 3f, weaponY, weaponWidth, weaponHeight), 4, "LOCKED", 0, false, true);
+        if (_classLoadout?.SelectedClass != null)
+        {
+            for (int index = 0; index < ClassLoadoutCatalog.RequiredSlotCount; index++)
+            {
+                LoadoutWeaponSlot slot = (LoadoutWeaponSlot)(index + 1);
+                DrawLoadoutWeaponCard(
+                    new Rect(weaponX + (weaponWidth + weaponGap) * index, weaponY, weaponWidth, weaponHeight),
+                    _classLoadout.GetSlotSnapshot(slot));
+            }
+        }
+        else
+        {
+            DrawWeaponCard(new Rect(weaponX, weaponY, weaponWidth, weaponHeight), 1, "ПИСТОЛЕТ", _pistolUpgradeCount, _selectedWeapon == 1, false);
+            DrawWeaponCard(new Rect(weaponX + (weaponWidth + weaponGap), weaponY, weaponWidth, weaponHeight), 2, "ПУЛЕМЁТ", _machineGunUpgradeCount, _selectedWeapon == 2, false);
+            DrawWeaponCard(new Rect(weaponX + (weaponWidth + weaponGap) * 2f, weaponY, weaponWidth, weaponHeight), 3, "LOCKED", 0, false, true);
+            DrawWeaponCard(new Rect(weaponX + (weaponWidth + weaponGap) * 3f, weaponY, weaponWidth, weaponHeight), 4, "LOCKED", 0, false, true);
+        }
+    }
+
+    private void DrawLoadoutWeaponCard(Rect rect, ClassLoadoutSlotSnapshot slot)
+    {
+        bool locked = slot.State == LoadoutSlotState.Locked;
+        bool pending = slot.State == LoadoutSlotState.ChoicePending;
+        Color previousColor = GUI.color;
+        GUI.color = locked
+            ? new Color(0.05f, 0.05f, 0.06f, 0.88f)
+            : pending
+                ? new Color(0.34f, 0.2f, 0.02f, 0.96f)
+                : new Color(0.05f, 0.08f, 0.12f, 0.94f);
+        GUI.DrawTexture(rect, Texture2D.whiteTexture);
+        GUI.color = previousColor;
+
+        string name = slot.State switch
+        {
+            LoadoutSlotState.Selected => slot.SelectedWeapon.DisplayName,
+            LoadoutSlotState.ChoicePending => "ВЫБОР...",
+            _ => GetLockedLabel(slot.Milestone)
+        };
+        DrawCenteredLabel(
+            new Rect(rect.x, rect.y + 2f, rect.width, 18f),
+            $"{(int)slot.Slot}  {name}",
+            11,
+            locked ? Color.gray : pending ? Color.yellow : Color.white);
+
+        if (slot.State != LoadoutSlotState.Selected)
+        {
+            return;
+        }
+
+        Rect progressRect = new(rect.x + 6f, rect.yMax - 15f, rect.width - 12f, 8f);
+        DrawSegmentedProgress(progressRect, slot.Level, ClassLoadoutSession.WeaponLevelCap, new Color(0.05f, 0.76f, 0.92f));
+        DrawCenteredLabel(new Rect(rect.x, rect.y + 18f, rect.width, 16f), $"{slot.Level} / {ClassLoadoutSession.WeaponLevelCap}", 11);
+    }
+
+    private static string GetLockedLabel(LoadoutUnlockMilestone milestone)
+    {
+        return milestone switch
+        {
+            LoadoutUnlockMilestone.ArenaR => "ДО АРЕНЫ Р",
+            LoadoutUnlockMilestone.ArenaO => "ДО АРЕНЫ О",
+            LoadoutUnlockMilestone.BossSpawned => "ДО БОССА",
+            _ => "ЗАКРЫТО"
+        };
     }
 
     private void DrawWeaponCard(Rect rect, int slot, string weaponName, int upgradeCount, bool selected, bool locked)

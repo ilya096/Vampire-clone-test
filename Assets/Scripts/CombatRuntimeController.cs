@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Assets.Scripts.Ecs;
+using LogoSurvivor.ClassLoadout;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Transforms;
@@ -70,7 +71,7 @@ public class CombatRuntimeController : MonoBehaviour
     private void UpdateAimAndWeapon()
     {
         PlayerCombatState combat = _entityManager.GetComponentData<PlayerCombatState>(_playerEntity);
-        if (Keyboard.current != null)
+        if (Keyboard.current != null && Time.timeScale > 0f && Time.deltaTime > 0f)
         {
             if (Keyboard.current.digit1Key.wasPressedThisFrame) combat.SelectedWeapon = WeaponSlot.Pistol;
             if (Keyboard.current.digit2Key.wasPressedThisFrame) combat.SelectedWeapon = WeaponSlot.MachineGun;
@@ -135,6 +136,11 @@ public class CombatRuntimeController : MonoBehaviour
         {
             _hud.PresentationVisible = visible;
         }
+    }
+
+    public void BindClassLoadout(ClassLoadoutSession classLoadout)
+    {
+        _hud?.BindClassLoadout(classLoadout);
     }
 
     public void HideDefeatPanel()
